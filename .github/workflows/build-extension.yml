@@ -2,6 +2,8 @@ name: Build and Release Weby Extension
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -9,10 +11,14 @@ jobs:
   build:
     name: Build Extension
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,6 +32,11 @@ jobs:
       - name: Build extension
         run: npm run build
 
+      - name: Get short SHA
+# Extract the first 7 characters of the commit SHA to use in the versioning
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Prepare build artifact
         run: |
           cp README_INSTALL.md dist/
@@ -33,30 +44,42 @@ jobs:
           zip -r ../weby-extension.zip .
           cd ..
 
-      - name: Create GitHub Release
-        id: create_release
+      - name: Automatic Release (Latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: weby-extension.zip
+          tag_name: latest
+          name: Weby Auto-Build (Main)
+          body: |
+            ### 🚀 Weby - Build Automático (Commit: ${{ steps.vars.outputs.sha_short }})
+
+            Esta release se actualiza automáticamente con cada commit en la rama `main`.
+            
+            #### 🛠️ Instrucciones de Instalación (Modo Desarrollador)
+
+            1. **Descarga y descomprime** el archivo `weby-extension.zip` adjunto.
+            2. Abre tu navegador y ve a `chrome://extensions`.
+            3. Activa el **Modo de desarrollador**.
+            4. Haz clic en **Cargar descomprimida** y selecciona la carpeta.
+
+            ---
+            *Generado automáticamente por GitHub Actions*
+          draft: false
+          prerelease: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tagged Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: weby-extension.zip
           name: Release ${{ github.ref_name }}
           body: |
-            ### 🚀 Weby - Nueva Versión `${{ github.ref_name }}`
-
-            Esta release contiene la extensión compilada lista para ser instalada.
-
-            #### 🛠️ Instrucciones de Instalación (Modo Desarrollador)
-
-            Para cargar la extensión en tu navegador (Chrome, Edge, Brave):
-
-            1. **Descarga y descomprime** el archivo `weby-extension.zip` adjunto.
-            2. Abre tu navegador y ve a `chrome://extensions`.
-            3. Activa el **Modo de desarrollador** (esquina superior derecha).
-            4. Haz clic en el botón **Cargar descomprimida** (Load unpacked).
-            5. Selecciona la carpeta que acabas de descomprimir (asegúrate de que contiene el archivo `manifest.json`).
-            6. ¡Listo! Ya puedes empezar a usar Weby desde el panel lateral.
-
-            ---
-            **Nota:** Al ser una carga manual, es posible que el navegador te avise que estás usando extensiones en modo desarrollador. Es normal.
+            ### 🚀 Weby - Versión Oficial `${{ github.ref_name }}`
+            
+            Build estable basado en el tag `${{ github.ref_name }}`.
           draft: false
           prerelease: false
         env:
