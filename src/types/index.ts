@@ -84,6 +84,8 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   model?: string; // Default model for this conversation
+  url?: string; // URL associated with this conversation
+  favicon?: string; // Favicon URL associated with this conversation
 }
 
 /**
@@ -133,6 +135,8 @@ export interface Settings {
   maxTokens: number;
   theme: 'light' | 'dark' | 'auto';
   language: 'es' | 'en';
+  enableUpdates?: boolean | null;
+  lastUpdateCheck?: number;
   // Web search settings
   enableWebSearch?: boolean; // Enable web search by default
   webSearchSources?: ('wikipedia' | 'duckduckgo' | 'extension')[]; // Search providers to use

@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS: Settings = {
   faithfulnessThreshold: 0.45, // Default sensitivity
   chunkWindowSize: 1, // Default Small-to-Big window
   enableUpdates: null, // null = not asked yet, true = enabled, false = disabled
+  lastUpdateCheck: 0, // Last timestamp we checked for updates
   // Remote API defaults
   enableInboundApi: false, // Disabled by default for privacy
   inboundApiKey: '', // No key by default

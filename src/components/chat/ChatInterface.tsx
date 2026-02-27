@@ -1,19 +1,40 @@
 // ChatInterface - Complete chat interface with RAG & Specialized MCP Support
 
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { Sparkles, AlertCircle, Server, History, Sliders, X, MoreVertical, Printer, FileDown, FileText, FileCode } from 'lucide-preact';
+import { Sparkles, AlertCircle, Server, History, Sliders, X, MoreVertical, Printer, FileDown, FileText, FileCode, Plus, Globe } from 'lucide-preact';
 import { Message } from './Message';
 import { ChatInput } from './ChatInput';
 import { WebSearchProgress } from './WebSearchProgress';
 import { UrlConfirmationModal } from './UrlConfirmationModal';
 import { MarkdownRenderer } from '../ui/MarkdownRenderer';
-import { conversationsStore, modelsReady, hasReadyDocuments, canvasStore, canvasSignal, modelsStore, generatingTitleIdSignal, chatModeSignal, canChat as canChatSignal } from '@/lib/stores';
+import { 
+  conversationsStore, 
+  modelsReady, 
+  hasReadyDocuments, 
+  canvasStore, 
+  canvasSignal, 
+  modelsStore, 
+  generatingTitleIdSignal, 
+  chatModeSignal, 
+  canChat as canChatSignal,
+  processingSignal,
+  activeTabUrlSignal,
+  activeTabFaviconSignal
+} from '@/lib/stores';
 import { i18nStore } from '@/lib/stores/i18n';
 import type { Message as MessageType } from '@/types';
 import { completeRAGFlow } from '@/lib/rag/rag-pipeline';
 import EngineManager from '@/lib/ai/engine-manager';
 import { WebLLMEngine } from '@/lib/ai/webllm-engine';
-import { addMessage, getOrCreateConversation, getConversation, generateTitle, updateConversationTitle, aiGenerateTitle } from '@/lib/db/conversations';
+import { 
+  addMessage, 
+  getOrCreateConversation, 
+  getConversation, 
+  generateTitle, 
+  updateConversationTitle, 
+  aiGenerateTitle,
+  createConversation
+} from '@/lib/db/conversations';
 import { getRAGSettings, getWebSearchSettings, getSetting, getUseAdvancedRAG, getGenerationSettings, updateGenerationSettings } from '@/lib/db/settings';
 import { getMemories, addMemory } from '@/lib/db/memories';
 import { WebRAGOrchestrator } from '@/lib/web-search';
@@ -764,12 +785,44 @@ Instrucciones Críticas:
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)] overflow-hidden min-h-0">
-      {/* Chat Header with Options */}
-      {messages.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md flex justify-between items-center z-10">
-          <div className="text-xs font-medium text-[var(--color-text-tertiary)] truncate max-w-[200px]">
+      {/* Chat Header with Current Page Info & Options */}
+      <div className="flex-shrink-0 px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md flex justify-between items-center z-10 min-h-[52px]">
+        <div className="flex items-center gap-3 overflow-hidden">
+          {/* Current Page Info (Favicon + URL) */}
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-[var(--color-bg-secondary)] border border-[var(--color-border)] max-w-[240px] overflow-hidden group">
+            {activeTabFaviconSignal.value ? (
+              <img src={activeTabFaviconSignal.value} className="w-4 h-4 rounded-sm flex-shrink-0" />
+            ) : (
+              <Globe size={14} className="text-[var(--color-text-tertiary)] flex-shrink-0" />
+            )}
+            <div className="text-[10px] font-medium text-[var(--color-text-secondary)] truncate">
+              {activeTabUrlSignal.value ? new URL(activeTabUrlSignal.value).hostname : 'Weby'}
+            </div>
+          </div>
+          
+          <div className="h-4 w-[1px] bg-[var(--color-border)] hidden sm:block"></div>
+          
+          <div className="text-xs font-semibold text-[var(--color-text)] truncate max-w-[150px]">
             {conversationsStore.active?.title || i18nStore.t('common.conversations')}
           </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {/* New Chat Button */}
+          <button
+            onClick={async () => {
+              const url = activeTabUrlSignal.value;
+              const favicon = activeTabFaviconSignal.value;
+              const conversation = await createConversation(i18nStore.t('common.newConversation'), undefined, url || undefined, favicon || undefined);
+              conversationsStore.add(conversation);
+              conversationsStore.setActive(conversation.id);
+            }}
+            className="p-1.5 rounded-lg hover:bg-[var(--color-primary)] hover:text-black text-[var(--color-text-tertiary)] transition-all"
+            title={i18nStore.t('common.newConversation')}
+          >
+            <Plus size={18} />
+          </button>
+
           <div className="relative chat-header-actions" ref={menuRef}>
             <button
               onClick={() => setShowOptionsMenu(!showOptionsMenu)}
@@ -816,7 +869,7 @@ Instrucciones Críticas:
             )}
           </div>
         </div>
-      )}
+      </div>
 
       <div 
         ref={scrollContainerRef}
@@ -825,10 +878,33 @@ Instrucciones Críticas:
         style={{ overscrollBehavior: 'contain' }}
       >
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center opacity-50 space-y-4">
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-4">
             <img src="/inledai.svg" width={64} className="animate-in zoom-in duration-500" />
-            <h3 className="text-xl font-bold">{i18nStore.t('chat.welcome')}</h3>
-            {!canChat && <p className="text-sm text-amber-500 mt-2">{i18nStore.t('chat.stepsRequired')}</p>}
+            
+            {processingSignal.value ? (
+              <div className="flex flex-col items-center space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)] animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[10px] font-bold">{Math.round(processingSignal.value.progress)}%</span>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">{i18nStore.t('common.processing')}...</h3>
+                  <p className="text-sm text-[var(--color-text-tertiary)]">{processingSignal.value.message}</p>
+                </div>
+              </div>
+            ) : !isModelsReady ? (
+               <div className="flex flex-col items-center space-y-3">
+                 <div className="w-8 h-8 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)] animate-spin opacity-50"></div>
+                 <h3 className="text-lg font-bold">{i18nStore.t('chat.loadingModels')}</h3>
+               </div>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold">{i18nStore.t('chat.welcome')}</h3>
+                {!canChat && <p className="text-sm text-amber-500 mt-2">{i18nStore.t('chat.stepsRequired')}</p>}
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-6">

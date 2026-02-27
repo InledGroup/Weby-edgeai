@@ -10,17 +10,31 @@ import { FirstRunWizard } from '@/components/FirstRunWizard';
 import { MemoryNotificationContainer } from '@/components/MemoryManager';
 import { PrivacySettings } from '@/components/PrivacySettings';
 import { DocumentViewer } from '@/components/DocumentViewer';
-import { initializeStores, modelsReady, uiSignal, uiStore, documentsStore, chatModeSignal, conversationsStore, documentsSignal } from '@/lib/stores';
+import { 
+  initializeStores, 
+  modelsReady, 
+  uiSignal, 
+  uiStore, 
+  documentsStore, 
+  chatModeSignal, 
+  conversationsStore, 
+  documentsSignal,
+  activeTabUrlSignal,
+  activeTabFaviconSignal,
+  processingSignal,
+  processingStore
+} from '@/lib/stores';
 import { autoLoadModels } from '@/lib/ai/model-loader';
 import { hasCompletedSetup } from '@/lib/ai/model-settings';
 import { processDocument } from '@/lib/rag/rag-pipeline';
 import { createDocument, deleteDocument } from '@/lib/db/documents';
+import { getOrCreateConversation } from '@/lib/db/conversations';
 import EngineManager from '@/lib/ai/engine-manager';
 import { generateUUID } from '@/lib/utils';
 import { i18nStore } from '@/lib/stores/i18n';
 
 export function SidebarApp() {
-  const [currentPage, setCurrentPage] = useState<{ url: string; title: string; markdown: string } | null>(null);
+  const [currentPage, setCurrentPage] = useState<{ url: string; title: string; markdown: string; favIconUrl?: string } | null>(null);
   const [indexingStatus, setIndexingStatus] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
@@ -65,6 +79,8 @@ export function SidebarApp() {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const activeTab = tabs[0];
         if (activeTab?.id && activeTab.url && !activeTab.url.startsWith('chrome://')) {
+          activeTabUrlSignal.value = activeTab.url;
+          activeTabFaviconSignal.value = activeTab.favIconUrl || null;
           chrome.tabs.sendMessage(activeTab.id, { type: 'REQUEST_PAGE_CONTENT' }).catch(() => {});
         }
       });
@@ -86,11 +102,34 @@ export function SidebarApp() {
 
   const handlePageContent = async (data: any) => {
     if (!modelsReady.value) return;
+    
+    // Update active tab signals
+    activeTabUrlSignal.value = data.url;
+    activeTabFaviconSignal.value = data.favIconUrl || null;
+
+    // Sync conversation for this URL
+    try {
+      const conversation = await getOrCreateConversation(undefined, undefined, data.url, data.favIconUrl);
+      if (conversation.id !== conversationsStore.activeId) {
+        // Only set active if it's different to avoid re-renders
+        if (!conversationsStore.all.find(c => c.id === conversation.id)) {
+          conversationsStore.add(conversation);
+        }
+        conversationsStore.setActive(conversation.id);
+      }
+    } catch (e) {
+      console.warn('Failed to sync conversation:', e);
+    }
+
     if (currentPage?.url === data.url) return;
+    if (indexingStatus && indexingStatus.includes('%')) return; // Already indexing something
 
     setCurrentPage(data);
     setIndexingStatus('Indexando...');
     try {
+      // Small pause to let DB stabilize and avoid race conditions
+      await new Promise(r => setTimeout(r, 200));
+
       const oldPages = documentsSignal.value.filter(doc => (doc.metadata && doc.metadata.source === 'extension_sidebar'));
       for (const oldPage of oldPages) {
         try {
@@ -115,12 +154,22 @@ export function SidebarApp() {
       });
 
       documentsStore.add(newDoc);
+      
+      // Wait another tiny moment for createDocument to finish its background transaction
+      await new Promise(r => setTimeout(r, 100));
 
       const embeddingEngine = await EngineManager.getEmbeddingEngine();
       await processDocument(newDoc.id, docMarkdown, embeddingEngine, 512, (status) => {
         setIndexingStatus(`IA: ${Math.round(status.progress)}%`);
+        // Update global processing signal for ChatInterface
+        processingStore.set({
+          ...status,
+          message: `${i18nStore.t('common.processing')} ${data.title}...`
+        });
+
         if (status.stage === 'complete') {
           documentsStore.update(newDoc.id, { status: 'ready' });
+          processingStore.clear();
         } else {
           documentsStore.update(newDoc.id, { status: 'processing' });
         }
@@ -131,10 +180,11 @@ export function SidebarApp() {
     } catch (error) {
       console.error('❌ RAG Error:', error);
       setIndexingStatus('Error RAG');
+      processingStore.clear();
     }
   };
 
-  if (!isReady) return <div className="h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-text)] font-medium">Iniciando Edge.AI...</div>;
+  if (!isReady) return <div className="h-screen flex items-center justify-center bg-[var(--color-bg)] text-[var(--color-text)] font-medium">Iniciando Weby...</div>;
 
   if (showWizard) {
     return (
@@ -158,7 +208,7 @@ export function SidebarApp() {
             </button>
             <h1 className="text-sm font-bold flex items-center gap-2">
               <img src="/inledai.svg" width={20} />
-              <span className="hidden xs:inline">Edge.AI</span>
+              <span className="hidden xs:inline">Weby</span>
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -215,7 +265,7 @@ export function SidebarApp() {
             <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/30 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <img src="/inledai.svg" width={24} />
-                <span className="font-bold">Edge.AI Menu</span>
+                <span className="font-bold">Weby Menu</span>
               </div>
               <button 
                 onClick={() => setSidebarOpen(false)}

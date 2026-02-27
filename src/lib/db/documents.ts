@@ -52,17 +52,23 @@ export async function getDocumentsByStatus(
 }
 
 /**
- * Update document
+ * Update document with retry logic for high-concurrency/immediate-access scenarios
  */
 export async function updateDocument(
   id: string,
-  updates: Partial<Document>
+  updates: Partial<Document>,
+  retryCount: number = 0
 ): Promise<void> {
   const db = await getDB();
   const doc = await db.get('documents', id);
 
   if (!doc) {
-    throw new Error(`Document ${id} not found`);
+    if (retryCount < 3) {
+      // Wait 100ms and retry
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return updateDocument(id, updates, retryCount + 1);
+    }
+    throw new Error(`Document ${id} not found after ${retryCount} retries`);
   }
 
   const updatedDoc = { ...doc, ...updates };

@@ -216,6 +216,10 @@ export interface MemoryNotification {
 }
 export const memoryNotificationSignal = signal<MemoryNotification | null>(null);
 
+// Signal for the currently active browser tab URL/Favicon
+export const activeTabUrlSignal = signal<string | null>(null);
+export const activeTabFaviconSignal = signal<string | null>(null);
+
 export const uiStore = {
   get sidebarOpen() {
     return uiSignal.value.sidebarOpen;
@@ -539,8 +543,9 @@ export const canChat = computed(() => {
   const isReady = modelsReady.value;
   const mode = chatModeSignal.value;
   const hasDocs = hasReadyDocuments.value;
+  const isProcessing = processingSignal.value !== null;
   
-  if (!isReady) return false;
+  if (!isReady || isProcessing) return false;
   
   // In conversation or web mode, we don't strictly need local documents
   if (mode === 'conversation' || mode === 'web') return true;

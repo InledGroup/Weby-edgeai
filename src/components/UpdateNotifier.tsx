@@ -3,56 +3,78 @@ import { RefreshCw, AlertTriangle, ShieldAlert, Globe, Check, X, Shield, Bell } 
 import { i18nStore } from '@/lib/stores/i18n';
 import { getSetting, setSetting } from '@/lib/db/settings';
 
-const CURRENT_VERSION = '0.1.0';
+// Versión actual (debería coincidir con manifest.json)
+const CURRENT_VERSION = '1.0.0'; 
 const UPDATE_API_URL = 'https://extupdater.inled.es/api/updates.json';
+const CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 horas en ms
 
 export function UpdateNotifier() {
   const [showUpdate, setShowUpdate] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [newVersion, setNewVersion] = useState('');
+  const [updateUrl, setUpdateUrl] = useState('');
 
   useEffect(() => {
     async function init() {
       const enabled = await getSetting('enableUpdates');
-      
+      const lastCheck = await getSetting('lastUpdateCheck') || 0;
+      const now = Date.now();
+
       if (enabled === null) {
         // Primera vez, pedir consentimiento
         setShowConsent(true);
       } else if (enabled === true) {
-        // Si está activado, comprobar actualizaciones directamente (sin proxies)
-        checkUpdates();
+        // Comprobar si ha pasado suficiente tiempo desde la última vez (24h)
+        if (now - lastCheck > CHECK_INTERVAL) {
+          checkUpdates();
+        }
       }
     }
 
     async function checkUpdates() {
       try {
+        console.log('[UpdateNotifier] Checking for updates...');
         const response = await fetch(UPDATE_API_URL, { 
           cache: 'no-store',
-          mode: 'cors' // Petición directa estándar
+          mode: 'cors'
         });
         
         if (response.ok) {
           const updates = await response.json();
           processUpdates(updates);
+          // Actualizar el timestamp de la última comprobación
+          await setSetting('lastUpdateCheck', Date.now());
         }
       } catch (error) {
-        // Fallará si hay problemas de red o CORS en el servidor, 
-        // pero cumplimos con no usar proxies.
         console.warn('[UpdateNotifier] Update check failed (Direct connection only)');
       }
+    }
+
+    function isNewer(latest: string, current: string): boolean {
+      const v1 = latest.split('.').map(Number);
+      const v2 = current.split('.').map(Number);
+      for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+        const n1 = v1[i] || 0;
+        const n2 = v2[i] || 0;
+        if (n1 > n2) return true;
+        if (n1 < n2) return false;
+      }
+      return false;
     }
 
     function processUpdates(updates: any[]) {
       if (!Array.isArray(updates)) return;
 
-      const edgeUpdate = updates.find(u => u.id && (u.id.startsWith('edgeai-web-v')));
+      // Buscamos cualquier actualización de edgeai-v
+      const edgeUpdate = updates.find(u => u.id && u.id.startsWith('weby-v'));
       
       if (edgeUpdate) {
         const versionMatch = edgeUpdate.id.match(/v(\d+\.\d+\.\d+)/);
         const detectedVersion = versionMatch ? versionMatch[1] : '';
         
-        if (detectedVersion && detectedVersion !== CURRENT_VERSION) {
+        if (detectedVersion && isNewer(detectedVersion, CURRENT_VERSION)) {
           setNewVersion(detectedVersion);
+          setUpdateUrl(edgeUpdate.url || 'https://github.com/InledGroup/Weby-edgeai');
           setShowUpdate(true);
         }
       }
@@ -65,10 +87,14 @@ export function UpdateNotifier() {
     await setSetting('enableUpdates', consent);
     setShowConsent(false);
     if (consent) {
-      // Si acepta, podemos recargar o simplemente esperar a la próxima vez
-      // Por simplicidad, ejecutamos la comprobación ahora
+      // Forzar comprobación inmediata tras aceptar
       window.location.reload();
     }
+  };
+
+  const handleUpdateClick = () => {
+    window.open(updateUrl, '_blank');
+    setShowUpdate(false);
   };
 
   if (showConsent) {
@@ -148,12 +174,20 @@ export function UpdateNotifier() {
             {i18nStore.t('updates.backupNotice')}
           </p>
           
-          <button
-            onClick={() => setShowUpdate(false)}
-            className="w-full py-4 bg-[var(--color-primary)] text-[var(--color-primary-foreground)] font-bold rounded-2xl transition-all active:scale-95 shadow-lg shadow-[var(--color-primary)]/20"
-          >
-            {i18nStore.t('updates.close')}
-          </button>
+          <div className="flex flex-col space-y-2">
+            <button
+              onClick={handleUpdateClick}
+              className="w-full py-4 bg-[var(--color-primary)] text-black font-bold rounded-2xl transition-all active:scale-95 shadow-lg shadow-[var(--color-primary)]/20"
+            >
+              Descargar Actualización
+            </button>
+            <button
+              onClick={() => setShowUpdate(false)}
+              className="w-full py-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors text-sm font-medium"
+            >
+              Recordar más tarde
+            </button>
+          </div>
         </div>
       </div>
     </div>

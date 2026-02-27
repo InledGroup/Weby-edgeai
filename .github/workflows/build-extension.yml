@@ -1,0 +1,63 @@
+name: Build and Release Weby Extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Prepare build artifact
+        run: |
+          cp README_INSTALL.md dist/
+          cd dist
+          zip -r ../weby-extension.zip .
+          cd ..
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: weby-extension.zip
+          name: Release ${{ github.ref_name }}
+          body: |
+            ### 🚀 Weby - Nueva Versión `${{ github.ref_name }}`
+
+            Esta release contiene la extensión compilada lista para ser instalada.
+
+            #### 🛠️ Instrucciones de Instalación (Modo Desarrollador)
+
+            Para cargar la extensión en tu navegador (Chrome, Edge, Brave):
+
+            1. **Descarga y descomprime** el archivo `weby-extension.zip` adjunto.
+            2. Abre tu navegador y ve a `chrome://extensions`.
+            3. Activa el **Modo de desarrollador** (esquina superior derecha).
+            4. Haz clic en el botón **Cargar descomprimida** (Load unpacked).
+            5. Selecciona la carpeta que acabas de descomprimir (asegúrate de que contiene el archivo `manifest.json`).
+            6. ¡Listo! Ya puedes empezar a usar Weby desde el panel lateral.
+
+            ---
+            **Nota:** Al ser una carga manual, es posible que el navegador te avise que estás usando extensiones en modo desarrollador. Es normal.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

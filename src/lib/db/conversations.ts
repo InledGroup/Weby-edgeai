@@ -11,7 +11,9 @@ import { generateUUID } from '../utils';
  */
 export async function createConversation(
   title: string = 'New Conversation',
-  model?: string
+  model?: string,
+  url?: string,
+  favicon?: string
 ): Promise<Conversation> {
   const db = await getDB();
 
@@ -21,7 +23,9 @@ export async function createConversation(
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    model
+    model,
+    url,
+    favicon
   };
 
   await db.add('conversations', conversation);
@@ -36,6 +40,18 @@ export async function getConversation(
 ): Promise<Conversation | undefined> {
   const db = await getDB();
   return db.get('conversations', id);
+}
+
+/**
+ * Get most recent conversation by URL
+ */
+export async function getMostRecentConversationByUrl(
+  url: string
+): Promise<Conversation | undefined> {
+  const db = await getDB();
+  const conversations = await db.getAllFromIndex('conversations', 'by-updated');
+  // Find the one with the matching URL (it's already sorted by updated index if we use getAllFromIndex correctly, but let's be sure)
+  return conversations.reverse().find(c => c.url === url);
 }
 
 /**
@@ -184,7 +200,9 @@ export async function getConversationCount(): Promise<number> {
  */
 export async function getOrCreateConversation(
   conversationId?: string,
-  model?: string
+  model?: string,
+  url?: string,
+  favicon?: string
 ): Promise<Conversation> {
   if (conversationId) {
     const existing = await getConversation(conversationId);
@@ -193,7 +211,15 @@ export async function getOrCreateConversation(
     }
   }
 
-  return createConversation('New Conversation', model);
+  // If we have a URL, try to find the most recent conversation for it
+  if (url) {
+    const recent = await getMostRecentConversationByUrl(url);
+    if (recent) {
+      return recent;
+    }
+  }
+
+  return createConversation('New Conversation', model, url, favicon);
 }
 
 /**

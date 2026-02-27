@@ -208,7 +208,7 @@ export function AppLayout() {
             <div className="bg-[var(--color-bg-secondary)] p-8 flex flex-col items-center justify-center space-y-4">
               {/* App Icon Mockup */}
               <div className="w-20 h-20 bg-white rounded-2xl p-3 shadow-xl flex items-center justify-center border border-gray-100">
-                <img src="/inledai.png" alt="Edge.AI Logo" className="w-full h-full object-contain" />
+                <img src="/inledai.png" alt="Weby Logo" className="w-full h-full object-contain" />
               </div>
               <h2 className="text-xl font-bold text-[var(--color-text-primary)] text-center">
                 {i18nStore.t('pwa.title')}

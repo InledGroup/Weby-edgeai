@@ -169,7 +169,7 @@ export function Sidebar({ onDocumentClick, onShowDocumentUpload, onShowModelWiza
           <a href={"/landing"}>
             <div className="flex items-center gap-2">
               <img src="/inledai.svg" width={28} height={28} />
-              <span className="font-semibold text-sm">Edge.AI</span>
+              <span className="font-semibold text-sm">Weby</span>
             </div>
           </a>
         </div>
