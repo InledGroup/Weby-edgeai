@@ -1,0 +1,124 @@
+---
+// Edge.AI - Local-first AI Platform (ChatGPT-style Design)
+import { AppLayout } from '@/components/AppLayout';
+import { pwaInfo } from 'virtual:pwa-info';
+import '@/styles/global.css';
+---
+
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge.AI - 100% Local AI Platform</title>
+    <meta name="description" content="Plataforma de IA conversacional 100% local - Sin backend, sin cuentas, sin envío de datos">
+    <link rel="icon" type="image/png" href="/icon-192.png">
+    <link rel="shortcut icon" href="/icon-192.png">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Edge.AI">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+    
+    {pwaInfo && <Fragment set:html={pwaInfo.webManifest.linkTag} />}
+    {!pwaInfo && <link rel="manifest" href="/manifest.json" />}
+    <script>
+        import '../pwa.ts';
+        import { Buffer } from 'buffer';
+        
+        // Node.js Polyfills for browser compatibility
+        if (typeof window !== 'undefined') {
+            // @ts-ignore
+            window.global = window;
+            
+            // @ts-ignore
+            if (!window.process) {
+                // @ts-ignore
+                window.process = { 
+                    env: {}, 
+                    version: 'v20.0.0', 
+                    platform: 'browser',
+                    browser: true,
+                    nextTick: (fn: Function) => setTimeout(fn, 0),
+                    cwd: () => '/'
+                };
+            } else {
+                // @ts-ignore
+                window.process.nextTick = (fn: Function) => setTimeout(fn, 0);
+                // @ts-ignore
+                if (!window.process.cwd) window.process.cwd = () => '/';
+            }
+            
+            // Buffer polyfill
+            // @ts-ignore
+            window.Buffer = Buffer;
+
+            // Crypto polyfill
+            if (!window.crypto.webcrypto) {
+                // @ts-ignore
+                window.crypto.webcrypto = window.crypto;
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- Main App Layout -->
+    <AppLayout client:load />
+
+    <!-- Initialize stores -->
+    <script>
+        import { initializeStores } from '@/lib/stores';
+        import { setUseAdvancedRAG } from '@/lib/db/settings';
+
+        // Initialize on client side
+        if (typeof window !== 'undefined') {
+            initializeStores().catch(console.error);
+
+            // Secret experimental command handler
+            // Usage: sudo("use-experimental --rag-fudan")
+            // @ts-ignore
+            window.sudo = (cmd: string) => {
+                if (cmd === 'use-experimental --rag-fudan') {
+                    console.log('🚀 [AdvancedRAG] Activating Fudan High-Perf Pipeline...');
+                    setUseAdvancedRAG(true).then(() => {
+                        console.log('✅ [AdvancedRAG] Mode activated.');
+                        if (confirm('RAG Avanzado activado. ¿Recargar página ahora para aplicar?')) {
+                            window.location.reload();
+                        }
+                    });
+                    return 'Command accepted. Check confirmation dialog.';
+                }
+                
+                if (cmd === 'use-experimental --disable-rag-fudan') {
+                    setUseAdvancedRAG(false).then(() => {
+                        console.log('❌ [AdvancedRAG] Mode deactivated.');
+                        window.location.reload();
+                    });
+                    return 'Deactivating...';
+                }
+
+                if (cmd === 'db-reset-hard') {
+                    if (confirm('¿ESTÁS SEGURO? Esto borrará TODOS tus documentos y conversaciones para reparar la base de datos.')) {
+                        indexedDB.deleteDatabase('edge-ai-db');
+                        window.location.reload();
+                    }
+                    return 'Resetting...';
+                }
+
+                console.warn('❌ Unknown sudo command. Available: "use-experimental --rag-fudan", "use-experimental --disable-rag-fudan", "db-reset-hard"');
+                return 'Error: Invalid command';
+            };
+
+            console.log('💻 Edge AI Console Ready. Type sudo("use-experimental --rag-fudan") to enable experimental features.');
+        }
+    </script>
+
+    <!-- Background glow effect -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        <div class="absolute top-0 left-1/4 w-96 h-96 bg-[var(--color-primary)] opacity-5 blur-[120px] rounded-full"></div>
+        <div class="absolute bottom-0 right-1/4 w-96 h-96 bg-[var(--color-primary)] opacity-5 blur-[120px] rounded-full"></div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "edge-ai-sidekick",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "@mlc-ai/web-llm": "^0.2.81",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@preact/signals": "^1.2.0",
+    "@types/marked": "^5.0.2",
+    "@types/turndown": "^5.0.6",
+    "@types/uuid": "^10.0.0",
+    "clsx": "^2.0.0",
+    "idb": "^7.1.0",
+    "lucide-preact": "^0.300.0",
+    "marked": "^17.0.3",
+    "preact": "^10.19.0",
+    "tailwind-merge": "^2.0.0",
+    "turndown": "^7.2.2",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.7.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0"
+  }
+}

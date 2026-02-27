@@ -1,0 +1,619 @@
+/**
+ * Extension Bridge - Simplified communication with browser extension
+ *
+ * Architecture:
+ * 1. Extension's content script auto-detects edge.inled.es or localhost:4321
+ * 2. Extension sends CONNECTION_READY via window.postMessage
+ * 3. Page shows notification that extension is connected
+ * 4. When page needs search, sends SEARCH_REQUEST
+ * 5. Extension shows permission dialog (unless in permissive mode)
+ * 6. Extension sends SEARCH_RESPONSE with results
+ */
+
+export type ExtensionConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ExtensionPermissionMode = 'ask' | 'permissive';
+
+export interface ExtensionSearchRequest {
+  query: string;
+  maxResults?: number;
+}
+
+export interface ExtensionSearchResult {
+  title: string;
+  url: string;
+  content: string;
+  wordCount: number;
+  extractedAt: number;
+}
+
+export interface ExtensionSearchResponse {
+  success: boolean;
+  results: ExtensionSearchResult[];
+  error?: string;
+}
+
+/**
+ * Extension Bridge - Main API
+ */
+export class ExtensionBridge {
+  private status: ExtensionConnectionStatus = 'disconnected';
+  private permissionMode: ExtensionPermissionMode = 'ask';
+  private listeners: Set<(status: ExtensionConnectionStatus) => void> = new Set();
+  private pendingRequests: Map<string, { resolve: Function, reject: Function, timeout: NodeJS.Timeout }> = new Map();
+
+  constructor() {
+    this.setupMessageListener();
+    this.sendPing();
+  }
+
+  /**
+   * Setup message listener from extension (via window.postMessage)
+   */
+  private setupMessageListener() {
+    window.addEventListener('message', (event) => {
+      // Only accept messages from same origin
+      if (event.source !== window) return;
+
+      const message = event.data;
+
+      // Check if it's an extension message
+      if (!message || message.source !== 'edgeai-extension') return;
+
+      console.log('[ExtensionBridge] 📨 Received:', message.type);
+
+      switch (message.type) {
+        case 'PONG':
+          this.handlePong(message.data);
+          break;
+
+        case 'CONNECTION_READY':
+          this.handleConnectionReady(message.data);
+          break;
+
+        case 'SEARCH_RESPONSE':
+        case 'EXTRACT_URLS_RESPONSE':
+        case 'FETCH_RESPONSE':
+          this.handleSearchResponse(message.data);
+          break;
+
+        case 'SEARCH_DENIED':
+        case 'EXTRACT_URLS_DENIED':
+        case 'FETCH_DENIED':
+          this.handleSearchDenied(message.data);
+          break;
+
+        case 'SEARCH_ERROR':
+        case 'EXTRACT_URLS_ERROR':
+        case 'FETCH_ERROR':
+          this.handleSearchError(message.data);
+          break;
+
+        case 'OPENAI_API_REQUEST':
+          this.handleInboundApiRequest(message.data);
+          break;
+      }
+    });
+  }
+
+  /**
+   * Handle incoming OpenAI API request from external source (via extension)
+   */
+  private async handleInboundApiRequest(data: any) {
+    const { requestId, payload, apiKey } = data;
+    console.log('[ExtensionBridge] 🤖 Received Inbound API Request:', requestId);
+
+    try {
+      // 1. Check if Inbound API is enabled
+      const { getSetting } = await import('./db/settings');
+      const enabled = await getSetting('enableInboundApi');
+      const savedKey = await getSetting('inboundApiKey');
+
+      if (!enabled) {
+        throw new Error('Inbound API is disabled in Privacy Settings');
+      }
+
+      // 2. Validate API Key if set
+      if (savedKey && apiKey !== savedKey) {
+        throw new Error('Invalid API Key');
+      }
+
+      // 3. Process the request via EngineManager
+      const { EngineManager } = await import('./ai/engine-manager');
+      const engine = await EngineManager.getChatEngine();
+
+      if (!engine) {
+        throw new Error('Chat engine not ready');
+      }
+
+      // Handle streaming or non-streaming
+      if (payload.stream) {
+        // For streaming, we need to send chunks back to the extension
+        await engine.chat(payload.messages, {
+          temperature: payload.temperature,
+          maxTokens: payload.max_tokens,
+          topP: payload.top_p,
+          stop: payload.stop,
+          tools: payload.tools,
+          onStream: (chunk) => {
+            window.postMessage({
+              source: 'edgeai-webapp',
+              type: 'OPENAI_API_STREAM_CHUNK',
+              data: {
+                requestId,
+                chunk: {
+                  choices: [{ delta: { content: chunk } }]
+                }
+              }
+            }, '*');
+          }
+        });
+
+        // Send final signal
+        window.postMessage({
+          source: 'edgeai-webapp',
+          type: 'OPENAI_API_RESPONSE',
+          data: {
+            requestId,
+            done: true
+          }
+        }, '*');
+      } else {
+        const result = await engine.chat(payload.messages, {
+          temperature: payload.temperature,
+          maxTokens: payload.max_tokens,
+          topP: payload.top_p,
+          stop: payload.stop,
+          tools: payload.tools
+        });
+
+        // Send full response
+        window.postMessage({
+          source: 'edgeai-webapp',
+          type: 'OPENAI_API_RESPONSE',
+          data: {
+            requestId,
+            result: {
+              choices: [{ message: result }]
+            }
+          }
+        }, '*');
+      }
+    } catch (error: any) {
+      console.error('[ExtensionBridge] ❌ Inbound API Error:', error);
+      window.postMessage({
+        source: 'edgeai-webapp',
+        type: 'OPENAI_API_ERROR',
+        data: {
+          requestId,
+          error: error.message || 'Unknown error during inference'
+        }
+      }, '*');
+    }
+  }
+
+  /**
+   * Send ping to check if extension is present
+   */
+  private sendPing() {
+    console.log('[ExtensionBridge] 🔍 Checking for extension...');
+    window.postMessage({
+      source: 'edgeai-webapp',
+      type: 'PING'
+    }, '*');
+  }
+
+  /**
+   * Handle PONG response from extension
+   */
+  private handlePong(data: any) {
+    console.log('[ExtensionBridge] 🏓 Extension responded to ping');
+    // Don't change status here - wait for CONNECTION_READY
+  }
+
+  /**
+   * Handle CONNECTION_READY from extension
+   */
+  private handleConnectionReady(data: any) {
+    console.log('[ExtensionBridge] ✅ Extension connected!', data);
+    this.permissionMode = data?.permissionMode || 'ask';
+    this.updateStatus('connected');
+
+    // Show connection notification
+    this.showConnectionNotification();
+  }
+
+  /**
+   * Show connection notification to user
+   */
+  private showConnectionNotification() {
+    // Dispatch custom event for UI to listen
+    window.dispatchEvent(new CustomEvent('edgeai-extension-connected', {
+      detail: {
+        permissionMode: this.permissionMode
+      }
+    }));
+  }
+
+  /**
+   * Handle search response
+   */
+  private handleSearchResponse(data: any) {
+    const { requestId, results } = data;
+    const pending = this.pendingRequests.get(requestId);
+
+    if (!pending) {
+      console.warn('[ExtensionBridge] ⚠️ No pending request for:', requestId);
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(requestId);
+
+    // DEBUG: Log the full data object to see what the extension actually returned
+    console.log('[ExtensionBridge] 📦 Full data payload from extension:', data);
+
+    // EXTENSION MAPPING FIX:
+    // For general FETCH responses, we might want the whole data object
+    // Check if the requestId was generated by fetchJson
+    if (requestId.startsWith('fetch_')) {
+      console.log('[ExtensionBridge] ✅ Fetch completed (Direct data response)');
+      pending.resolve({
+        success: true,
+        data: data.data || data.results || data
+      });
+      return;
+    }
+
+    // Others use results, pages, or data
+    let finalResults = [];
+    if (results) {
+      if (Array.isArray(results)) {
+        finalResults = results;
+      } else if (results.sources && Array.isArray(results.sources)) {
+        finalResults = results.sources;
+      }
+    } else {
+      finalResults = data.pages || data.data || [];
+    }
+
+    console.log('[ExtensionBridge] ✅ Request completed:', finalResults?.length || 0, 'items found');
+    pending.resolve({
+      success: true,
+      results: finalResults
+    });
+  }
+
+  /**
+   * Handle search denied by user
+   */
+  private handleSearchDenied(data: any) {
+    const { requestId, reason } = data;
+    const pending = this.pendingRequests.get(requestId);
+
+    if (!pending) return;
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(requestId);
+
+    console.log('[ExtensionBridge] ❌ Search denied:', reason);
+    pending.reject(new Error(reason || 'Search request denied by user'));
+  }
+
+  /**
+   * Handle search error
+   */
+  private handleSearchError(data: any) {
+    const { requestId, error } = data;
+    const pending = this.pendingRequests.get(requestId);
+
+    if (!pending) return;
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(requestId);
+
+    console.error('[ExtensionBridge] ❌ Search error:', error);
+
+    // Check if it's an extension reload error
+    if (error && error.includes('Extension was reloaded')) {
+      // Update status and trigger reconnection attempt
+      this.updateStatus('disconnected');
+      console.log('[ExtensionBridge] 🔄 Extension reloaded, attempting reconnection...');
+
+      // Try to reconnect after a short delay
+      setTimeout(() => {
+        this.reconnect();
+      }, 1000);
+
+      pending.reject(new Error('Extension was reloaded. Please refresh the page to reconnect.'));
+    } else {
+      pending.reject(new Error(error || 'Search failed'));
+    }
+  }
+
+  /**
+   * Update connection status
+   */
+  private updateStatus(status: ExtensionConnectionStatus) {
+    const oldStatus = this.status;
+    this.status = status;
+
+    if (oldStatus !== status) {
+      console.log('[ExtensionBridge] Status changed:', oldStatus, '→', status);
+      this.notifyListeners();
+    }
+  }
+
+  /**
+   * Notify all listeners
+   */
+  private notifyListeners() {
+    this.listeners.forEach(listener => {
+      try {
+        listener(this.status);
+      } catch (error) {
+        console.error('[ExtensionBridge] Listener error:', error);
+      }
+    });
+  }
+
+  /**
+   * Subscribe to status changes
+   */
+  onStatusChange(listener: (status: ExtensionConnectionStatus) => void): () => void {
+    this.listeners.add(listener);
+    // Immediately notify with current status
+    listener(this.status);
+
+    // Return unsubscribe function
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Get current status
+   */
+  getStatus(): ExtensionConnectionStatus {
+    return this.status;
+  }
+
+  /**
+   * Check if extension is connected
+   */
+  isConnected(): boolean {
+    return this.status === 'connected';
+  }
+
+  /**
+   * Get current permission mode
+   */
+  getPermissionMode(): ExtensionPermissionMode {
+    return this.permissionMode;
+  }
+
+  /**
+   * Request search only (no extraction yet)
+   */
+  async searchOnly(query: string, maxResults: number = 10): Promise<ExtensionSearchResponse> {
+    if (!this.isConnected()) {
+      throw new Error('Extension not connected. Please install and enable the Edge.AI browser extension.');
+    }
+
+    const requestId = `search_only_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log('[ExtensionBridge] 🔍 Requesting search only:', query);
+
+    return new Promise((resolve, reject) => {
+      // Setup timeout
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Search request timeout (30s)'));
+      }, 30000);
+
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+
+      window.postMessage({
+        source: 'edgeai-webapp',
+        type: 'SEARCH_ONLY_REQUEST',
+        data: {
+          requestId,
+          query,
+          maxResults
+        }
+      }, '*');
+    });
+  }
+
+  /**
+   * Request extraction for specific URLs
+   */
+  async extractUrls(urls: string[]): Promise<ExtensionSearchResponse> {
+    if (!this.isConnected()) {
+      throw new Error('Extension not connected.');
+    }
+
+    const requestId = `extract_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log('[ExtensionBridge] 📄 Requesting extraction for:', urls.length, 'URLs');
+
+    return new Promise((resolve, reject) => {
+      // Setup longer timeout for extraction
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Extraction request timeout (60s)'));
+      }, 60000);
+
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+
+      window.postMessage({
+        source: 'edgeai-webapp',
+        type: 'EXTRACT_URLS_REQUEST',
+        data: {
+          requestId,
+          urls
+        }
+      }, '*');
+    });
+  }
+
+  /**
+   * Generic fetch via extension to bypass CORS
+   */
+  async fetchJson(url: string, options: { method?: string, headers?: any, body?: any } = {}): Promise<any> {
+    if (!this.isConnected()) {
+      throw new Error('Extension not connected');
+    }
+
+    const requestId = `fetch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`[ExtensionBridge] 🌐 Fetching via extension (${options.method || 'GET'}):`, url);
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Extension fetch timeout'));
+      }, 30000); // 30s timeout for standard fetch
+
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+
+      window.postMessage({
+        source: 'edgeai-webapp',
+        type: 'FETCH_REQUEST',
+        data: {
+          requestId,
+          url,
+          options
+        }
+      }, '*');
+    });
+  }
+
+  /**
+   * Convenience POST via extension
+   */
+  async postJson(url: string, body: any, headers: any = {}): Promise<any> {
+    return this.fetchJson(url, {
+      method: 'POST',
+      body,
+      headers
+    });
+  }
+
+  /**
+   * Request search from extension
+   */
+  async search(query: string, maxResults: number = 10): Promise<ExtensionSearchResponse> {
+    if (!this.isConnected()) {
+      throw new Error('Extension not connected. Please install and enable the Edge.AI browser extension.');
+    }
+
+    const requestId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log('[ExtensionBridge] 🔍 Requesting search:', query);
+
+    return new Promise((resolve, reject) => {
+      // Setup timeout
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Search request timeout (60s)'));
+      }, 60000);
+
+      // Store pending request
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+
+      // Send search request
+      window.postMessage({
+        source: 'edgeai-webapp',
+        type: 'SEARCH_REQUEST',
+        data: {
+          requestId,
+          query,
+          maxResults
+        }
+      }, '*');
+    });
+  }
+
+  /**
+   * Manually trigger connection check
+   */
+  reconnect() {
+    console.log('[ExtensionBridge] 🔄 Reconnecting...');
+    this.updateStatus('connecting');
+    this.sendPing();
+  }
+
+  /**
+   * Cleanup pending requests
+   */
+  cleanup() {
+    this.pendingRequests.forEach(({ timeout, reject }) => {
+      clearTimeout(timeout);
+      reject(new Error('Bridge cleanup'));
+    });
+    this.pendingRequests.clear();
+    this.listeners.clear();
+  }
+}
+
+/**
+ * Global singleton instance
+ */
+let bridgeInstance: ExtensionBridge | null = null;
+
+/**
+ * Get or create extension bridge instance
+ */
+export function getExtensionBridge(): ExtensionBridge {
+  // Only initialize in browser environment
+  if (typeof window === 'undefined') {
+    throw new Error('ExtensionBridge can only be used in browser environment');
+  }
+
+  if (!bridgeInstance) {
+    bridgeInstance = new ExtensionBridge();
+  }
+  return bridgeInstance;
+}
+
+/**
+ * Initialize extension bridge (creates new instance)
+ */
+export function initExtensionBridge(): ExtensionBridge {
+  if (typeof window === 'undefined') {
+    throw new Error('ExtensionBridge can only be used in browser environment');
+  }
+
+  if (bridgeInstance) {
+    bridgeInstance.cleanup();
+  }
+  bridgeInstance = new ExtensionBridge();
+  return bridgeInstance;
+}
+
+/**
+ * Get extension bridge safely (returns null if not in browser)
+ */
+export function getExtensionBridgeSafe(): ExtensionBridge | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return getExtensionBridge();
+}
+
+// Export singleton instance - initialize lazily
+let _lazyBridge: ExtensionBridge | null = null;
+
+export const extensionBridge = new Proxy({} as ExtensionBridge, {
+  get(target, prop) {
+    // Initialize on first access in browser
+    if (typeof window !== 'undefined' && !_lazyBridge) {
+      _lazyBridge = getExtensionBridge();
+    }
+
+    if (!_lazyBridge) {
+      throw new Error('ExtensionBridge not available in SSR context');
+    }
+
+    return (_lazyBridge as any)[prop];
+  }
+});

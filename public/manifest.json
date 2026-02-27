@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Edge.AI Sidekick",
+  "version": "1.0.0",
+  "description": "Chatbot IA local que responde en base al contenido de la web que visitas.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage",
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Abrir Edge.AI Sidekick"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "icons": {
+    "16": "icons/inledai.png",
+    "48": "icons/inledai.png",
+    "128": "icons/inledai.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["turndown.js", "content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["wllama/*", "inledai.svg"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

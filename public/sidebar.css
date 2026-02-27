@@ -1,0 +1,50 @@
+/* sidebar.css - Specific overrides for Chrome Extension Sidebar */
+
+body {
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#app-root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Ensure ChatInterface takes full height and adjusts correctly */
+.sidebar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Hide desktop-only elements in sidebar */
+.desktop-only {
+  display: none !important;
+}
+
+/* Make sure messages don't have too much padding */
+.custom-scrollbar {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+
+/* Adjust text sizes for small screen */
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.125rem; }
+
+/* Input area sticky bottom */
+.chat-input-container {
+  padding: 0.75rem !important;
+}
+
+/* Status indicator */
+.status-pill {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+}
