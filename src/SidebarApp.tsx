@@ -147,7 +147,7 @@ export function SidebarApp() {
   return (
     <div className="h-screen flex flex-col bg-[var(--color-bg)] text-[var(--color-text)] overflow-hidden relative">
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[var(--color-bg)] relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--color-bg)] relative z-10">
         <header className="flex-shrink-0 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]/80 backdrop-blur-md flex justify-between items-center z-30">
           <div className="flex items-center gap-3">
             <button 
@@ -197,49 +197,47 @@ export function SidebarApp() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-hidden min-h-0 relative">
           <ChatInterface />
         </main>
       </div>
 
       {/* Overlay Sidebar (Drawer style) */}
       {sidebarOpen && (
-        <>
+        <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
           <div 
-            className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm animate-in fade-in duration-300"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setSidebarOpen(false)}
           />
           <div 
-            className="fixed inset-y-0 left-0 z-50 w-72 bg-[var(--color-bg-secondary)] shadow-2xl animate-in slide-in-from-left duration-300 border-r border-[var(--color-border)]"
+            className="relative w-72 h-full bg-[var(--color-bg-secondary)] shadow-2xl animate-in slide-in-from-left duration-300 border-r border-[var(--color-border)] flex flex-col"
           >
-            <div className="h-full flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/30">
-                <div className="flex items-center gap-2">
-                  <img src="/inledai.svg" width={24} />
-                  <span className="font-bold">Edge.AI Menu</span>
-                </div>
-                <button 
-                  onClick={() => setSidebarOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] transition-colors"
-                >
-                  <X size={20} />
-                </button>
+            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/30 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <img src="/inledai.svg" width={24} />
+                <span className="font-bold">Edge.AI Menu</span>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <Sidebar 
-                  onShowModelWizard={() => {
-                    setShowWizard(true);
-                    setSidebarOpen(false);
-                  }} 
-                  onDocumentClick={(id) => {
-                    setSelectedDocId(id);
-                    setSidebarOpen(false);
-                  }}
-                />
-              </div>
+              <button 
+                onClick={() => setSidebarOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-[var(--color-bg-tertiary)] transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden min-h-0">
+              <Sidebar 
+                onShowModelWizard={() => {
+                  setShowWizard(true);
+                  setSidebarOpen(false);
+                }} 
+                onDocumentClick={(id) => {
+                  setSelectedDocId(id);
+                  setSidebarOpen(false);
+                }}
+              />
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* Overlays & Modals */}

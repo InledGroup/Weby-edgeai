@@ -116,6 +116,8 @@ export function ChatInterface() {
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const streamingState = useRef({ spokenIndex: 0, buffer: '', isStreamingAudio: false, timer: null as any });
 
@@ -194,6 +196,15 @@ export function ChatInterface() {
     }
     streamingState.current.isStreamingAudio = false;
   };
+
+  // Detect manual scroll to enable/disable autoscroll
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    // If we are within 100px of bottom, keep autoscrolling
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+    setShouldAutoScroll(isAtBottom);
+  };
   
   useEffect(() => {
     getWebSearchSettings().then(s => setWebSearchEnabled(s.enableWebSearch));
@@ -201,8 +212,18 @@ export function ChatInterface() {
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, currentResponse, webSearchProgress]);
+    if (shouldAutoScroll && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      if (isGenerating) {
+        container.scrollTop = container.scrollHeight;
+      } else {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [messages, currentResponse, webSearchProgress, shouldAutoScroll, isGenerating]);
 
   const lastSyncedId = useRef<string | null>(null);
 
@@ -742,10 +763,10 @@ Instrucciones Críticas:
   }
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg)]">
+    <div className="flex flex-col h-full bg-[var(--color-bg)] overflow-hidden min-h-0">
       {/* Chat Header with Options */}
       {messages.length > 0 && (
-        <div className="sticky top-0 z-10 px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md flex justify-between items-center">
+        <div className="flex-shrink-0 px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md flex justify-between items-center z-10">
           <div className="text-xs font-medium text-[var(--color-text-tertiary)] truncate max-w-[200px]">
             {conversationsStore.active?.title || i18nStore.t('common.conversations')}
           </div>
@@ -797,7 +818,12 @@ Instrucciones Críticas:
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 max-w-3xl mx-auto w-full custom-scrollbar">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 max-w-3xl mx-auto w-full custom-scrollbar"
+        style={{ overscrollBehavior: 'contain' }}
+      >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-50 space-y-4">
             <img src="/inledai.svg" width={64} className="animate-in zoom-in duration-500" />
@@ -846,7 +872,7 @@ Instrucciones Críticas:
           </div>
         )}
       </div>
-      <div className="p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md">
+      <div className="flex-shrink-0 p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md">
         <div className="max-w-3xl mx-auto">
           <ChatInput 
             onSend={handleSendMessage} 

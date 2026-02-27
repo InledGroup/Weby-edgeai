@@ -1,16 +1,22 @@
 /* sidebar.css - Specific overrides for Chrome Extension Sidebar */
 
-body {
+* {
+  box-sizing: border-box;
+}
+
+body, html {
   width: 100%;
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
+  position: fixed; /* Prevent mobile pull-to-refresh and other browser behaviors */
 }
 
 #app-root {
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 /* Ensure ChatInterface takes full height and adjusts correctly */
