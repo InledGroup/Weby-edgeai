@@ -64,7 +64,7 @@ export function ExtensionStatus() {
         color: 'white',
         padding: '16px 20px',
         borderRadius: '12px',
-        boxShadow: '0 10px 40px rgba(4, 251, 0, 0.3)',
+        boxShadow: '0 10px 40px rgba(0, 254, 254, 0.3)',
         zIndex: 10000,
         maxWidth: '400px',
         animation: 'slideInRight 0.3s ease-out',

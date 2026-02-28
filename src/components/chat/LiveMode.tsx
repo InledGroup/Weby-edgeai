@@ -168,14 +168,14 @@ export default function LiveMode() {
       const centerY = canvas.height / 2;
       
       // Determine color and state
-      let mainColor = '#10B981'; // Default Emerald-500
-      let outerColor = 'rgba(16, 185, 129, 0.8)';
+      let mainColor = '#00fefe'; // Cyan
+      let outerColor = 'rgba(0, 254, 254, 0.8)';
       let baseRadius = 60 + (average * 0.8);
       
-      // Processing State: Intense Green + Auto Pulse
+      // Processing State: Intense Cyan + Auto Pulse
       if (voiceState.value === 'processing') {
-        mainColor = '#00ff41'; // Matrix/Terminal Bright Green
-        outerColor = 'rgba(0, 255, 65, 0.6)';
+        mainColor = '#00fefe'; 
+        outerColor = 'rgba(0, 254, 254, 0.6)';
         // Artificial pulse for processing state
         const pulse = (Math.sin(Date.now() / 150) + 1) * 8; 
         baseRadius = 60 + pulse;
@@ -184,7 +184,7 @@ export default function LiveMode() {
       // Outer glow
       const gradient = ctx.createRadialGradient(centerX, centerY, baseRadius * 0.5, centerX, centerY, baseRadius);
       gradient.addColorStop(0, outerColor); 
-      gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+      gradient.addColorStop(1, 'rgba(0, 254, 254, 0)');
 
       ctx.beginPath();
       ctx.arc(centerX, centerY, baseRadius, 0, 2 * Math.PI);
@@ -207,8 +207,8 @@ export default function LiveMode() {
         ctx.beginPath();
         ctx.arc(centerX, centerY, baseRadius + 20, 0, 2 * Math.PI);
         ctx.strokeStyle = voiceState.value === 'processing' 
-           ? `rgba(0, 255, 65, 0.4)`
-           : `rgba(16, 185, 129, ${Math.max(0, 0.5 - (average/255))})`;
+           ? `rgba(0, 254, 254, 0.4)`
+           : `rgba(0, 254, 254, ${Math.max(0, 0.5 - (average/255))})`;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -442,8 +442,8 @@ export default function LiveMode() {
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900 text-white px-6">
         <div className="w-full max-w-md space-y-6 text-center">
           <div className="relative flex justify-center">
-             <Loader2 className="w-16 h-16 text-emerald-500 animate-spin" />
-             <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-emerald-400">
+             <Loader2 className="w-16 h-16 text-[#00fefe] animate-spin" />
+             <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-[#00fefe]">
                {Math.round(loadProgress)}%
              </div>
           </div>
@@ -459,7 +459,7 @@ export default function LiveMode() {
               variant="default" 
               size="lg" 
               showPercentage={false}
-              className="text-emerald-500"
+              className="text-[#00fefe]"
             />
             <div className="flex justify-between text-[10px] text-gray-500 uppercase tracking-widest font-bold">
               <span>{loadMessage}</span>
@@ -490,7 +490,7 @@ export default function LiveMode() {
           <X className="w-6 h-6 text-gray-400" />
         </button>
         <div className="flex flex-col items-center">
-          <span className="text-sm font-bold text-emerald-500 uppercase tracking-widest">{t('live.title')}</span>
+          <span className="text-sm font-bold text-[#00fefe] uppercase tracking-widest">{t('live.title')}</span>
         </div>
         <button 
           onClick={() => setShowSettings(true)}
@@ -506,7 +506,7 @@ export default function LiveMode() {
           <div className="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-gray-800 flex justify-between items-center">
               <h3 className="text-lg font-bold flex items-center gap-2">
-                <Settings className="w-5 h-5 text-emerald-500" />
+                <Settings className="w-5 h-5 text-[#00fefe]" />
                 {t('live.settings.title')}
               </h3>
               <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white">
@@ -526,7 +526,7 @@ export default function LiveMode() {
                     }}
                     className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                       audioType === 'system' 
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-white' 
+                      ? 'bg-[#00fefe]/10 border-[#00fefe]/50 text-white' 
                       : 'bg-gray-800/50 border-transparent text-gray-400 hover:bg-gray-800'
                     }`}
                   >
@@ -534,7 +534,7 @@ export default function LiveMode() {
                       <Volume2 className="w-5 h-5" />
                       <span className="text-sm font-medium">{t('live.settings.systemOption')}</span>
                     </div>
-                    {audioType === 'system' && <Check className="w-4 h-4 text-emerald-500" />}
+                    {audioType === 'system' && <Check className="w-4 h-4 text-[#00fefe]" />}
                   </button>
 
                   <button 
@@ -544,7 +544,7 @@ export default function LiveMode() {
                     }}
                     className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                       audioType === 'model' 
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-white' 
+                      ? 'bg-[#00fefe]/10 border-[#00fefe]/50 text-white' 
                       : 'bg-gray-800/50 border-transparent text-gray-400 hover:bg-gray-800'
                     }`}
                   >
@@ -555,7 +555,7 @@ export default function LiveMode() {
                         <span className="text-[10px] text-gray-500 leading-tight">{t('live.settings.mimicDesc')}</span>
                       </div>
                     </div>
-                    {audioType === 'model' && <Check className="w-4 h-4 text-emerald-500" />}
+                    {audioType === 'model' && <Check className="w-4 h-4 text-[#00fefe]" />}
                   </button>
                 </div>
               </div>
@@ -576,7 +576,7 @@ export default function LiveMode() {
             <div className="p-4 bg-gray-800/30 text-center">
               <button 
                 onClick={() => setShowSettings(false)}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-bold transition-colors"
+                className="w-full py-2 bg-[#00cccc] hover:bg-[#00fefe] text-white rounded-lg text-sm font-bold transition-colors"
               >
                 {t('common.save')}
               </button>
@@ -600,7 +600,7 @@ export default function LiveMode() {
                <span className="text-gray-400 text-sm tracking-wide animate-pulse">{t('live.listening')}</span>
              )}
              {!voiceError.value && voiceState.value === 'processing' && (
-               <span className="text-emerald-400 text-sm tracking-wide animate-pulse">{t('live.thinking')}</span>
+               <span className="text-[#00fefe] text-sm tracking-wide animate-pulse">{t('live.thinking')}</span>
              )}
              {!voiceError.value && isMuted && (
                <span className="text-red-400 text-sm tracking-wide">{t('live.micDisabled')}</span>
@@ -641,7 +641,7 @@ export default function LiveMode() {
           onClick={() => setShowSubtitles(!showSubtitles)}
           className={`p-4 rounded-full transition-all duration-200 ${
             showSubtitles 
-            ? 'bg-emerald-900/50 text-emerald-400 ring-1 ring-emerald-500/50' 
+            ? 'bg-[#00fefe]/20 text-[#00fefe] ring-1 ring-[#00fefe]/50' 
             : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50'
           }`}
           title={t('live.subtitles')}
@@ -655,7 +655,7 @@ export default function LiveMode() {
           className={`p-6 rounded-full transition-all duration-200 transform hover:scale-105 ${
             isMuted 
             ? 'bg-gray-800 text-white ring-2 ring-gray-600' 
-            : 'bg-white text-black hover:bg-gray-100 shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+            : 'bg-white text-black hover:bg-gray-100 shadow-[0_0_20px_rgba(0,254,254,0.3)]'
           }`}
         >
           {isMuted ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}

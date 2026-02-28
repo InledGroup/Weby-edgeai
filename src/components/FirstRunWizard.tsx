@@ -667,7 +667,7 @@ export function FirstRunWizard({ onComplete }: FirstRunWizardProps) {
             {/* Tool Model Progress */}
             {loadingProgress.tool && (
               <div className="space-y-2">
-                <div className="text-sm font-medium text-emerald-500 flex items-center gap-2">
+                <div className="text-sm font-medium text-[#00fefe] flex items-center gap-2">
                   <Zap size={14} />
                   MCP Tooling Support
                 </div>

@@ -884,7 +884,7 @@ Instrucciones Críticas:
             {processingSignal.value ? (
               <div className="flex flex-col items-center space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)] animate-spin"></div>
+                  <div className="w-12 h-12 rounded-full border-2 border-[var(--color-border)] border-t-[#00fefe] animate-spin"></div>
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span className="text-[10px] font-bold">{Math.round(processingSignal.value.progress)}%</span>
                   </div>
@@ -896,7 +896,7 @@ Instrucciones Críticas:
               </div>
             ) : !isModelsReady ? (
                <div className="flex flex-col items-center space-y-3">
-                 <div className="w-8 h-8 rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)] animate-spin opacity-50"></div>
+                 <div className="w-8 h-8 rounded-full border-2 border-[var(--color-border)] border-t-[#00fefe] animate-spin opacity-50"></div>
                  <h3 className="text-lg font-bold">{i18nStore.t('chat.loadingModels')}</h3>
                </div>
             ) : (
@@ -915,7 +915,7 @@ Instrucciones Críticas:
                   <div key={m.id} className="flex justify-center animate-in fade-in slide-in-from-top-2">
                                           <div className="max-w-2xl w-full bg-[var(--color-bg-tertiary)]/40 border border-[var(--color-border)] rounded-xl p-4 shadow-sm">
                                             <div className="flex items-center gap-2 text-[var(--color-text-tertiary)] text-[10px] font-bold uppercase tracking-widest mb-2">
-                                              <Server size={12} className="text-green-500" />
+                                              <Server size={12} className="text-[#00fefe]" />
                                               <span>{i18nStore.t('mcp.toolResult').replace('{name}', (m.metadata?.toolName || 'Herramienta').toUpperCase())}</span>
                                             </div>
                                             <pre className="text-[11px] font-mono text-[var(--color-text-secondary)] overflow-x-auto whitespace-pre-wrap max-h-40 leading-relaxed custom-scrollbar">                        {m.content}

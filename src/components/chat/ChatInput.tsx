@@ -262,15 +262,15 @@ export function ChatInput({
           backgroundColor: mode === 'conversation' ? 'var(--color-bg-secondary)' :
                           mode === 'smart' ? 'rgb(168 85 247 / 0.1)' :
                           mode === 'web' ? 'rgb(59 130 246 / 0.1)' :
-                          'rgb(34 197 94 / 0.1)',
+                          'rgb(0 254 254 / 0.1)',
           borderColor: mode === 'conversation' ? 'var(--color-border)' :
                        mode === 'smart' ? 'rgb(168 85 247 / 0.3)' :
                        mode === 'web' ? 'rgb(59 130 246 / 0.3)' :
-                       'rgb(34 197 94 / 0.3)',
+                       'rgb(0 254 254 / 0.3)',
           color: mode === 'conversation' ? 'var(--color-text-secondary)' :
                  mode === 'smart' ? 'rgb(168 85 247)' :
                  mode === 'web' ? 'rgb(59 130 246)' :
-                 'rgb(34 197 94)',
+                 'rgb(0 254 254)',
           borderWidth: '1px',
           borderStyle: 'solid'
         }}
@@ -392,7 +392,7 @@ export function ChatInput({
                 className={cn(
                   'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left',
                   mode === 'local' 
-                    ? 'bg-green-500/10 text-green-600 dark:text-green-400' 
+                    ? 'bg-[#00fefe]/10 text-[#00cccc] dark:text-[#00fefe]' 
                     : 'hover:bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
                 )}
               >

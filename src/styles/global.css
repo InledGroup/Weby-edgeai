@@ -8,9 +8,10 @@
 
 :root {
   /* Brand Colors */
-  --color-primary: #28e518; /* Neon Green */
-  --color-primary-hover: #20b813;
+  --color-primary: #00fefe; /* Cyan */
+  --color-primary-hover: #00cccc;
   --color-primary-foreground: #000000;
+  --inled-green: #00fefe;
 
   /* Background - Light Theme */
   --color-bg: #ffffff;
@@ -28,7 +29,7 @@
   --color-border-hover: #d1d5db;
 
   /* Semantic Colors */
-  --color-success: #28e518;
+  --color-success: #00fefe;
   --color-error: #ef4444;
   --color-warning: #f59e0b;
   --color-info: #3b82f6;
@@ -38,7 +39,7 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  --shadow-primary: 0 0 20px rgba(40, 229, 24, 0.3);
+  --shadow-primary: 0 0 20px rgba(0, 254, 254, 0.3);
 
   /* Border Radius */
   --radius-sm: 0.375rem;
@@ -267,11 +268,11 @@ pre code {
 
 /* Glow Effect */
 .glow {
-  box-shadow: 0 0 20px rgba(40, 229, 24, 0.3);
+  box-shadow: 0 0 20px rgba(0, 254, 254, 0.3);
 }
 
 .glow-hover:hover {
-  box-shadow: 0 0 30px rgba(40, 229, 24, 0.5);
+  box-shadow: 0 0 30px rgba(0, 254, 254, 0.5);
   transition: box-shadow var(--transition-base);
 }
 
@@ -345,11 +346,11 @@ pre code {
 @keyframes neon-pulse {
   0%, 100% {
     border-color: var(--color-primary);
-    box-shadow: 0 0 10px rgba(40, 229, 24, 0.3);
+    box-shadow: 0 0 10px rgba(0, 254, 254, 0.3);
   }
   50% {
     border-color: var(--color-primary-hover);
-    box-shadow: 0 0 20px rgba(40, 229, 24, 0.5);
+    box-shadow: 0 0 20px rgba(0, 254, 254, 0.5);
   }
 }
 

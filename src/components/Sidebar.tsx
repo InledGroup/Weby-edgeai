@@ -178,7 +178,7 @@ export function Sidebar({ onDocumentClick, onShowDocumentUpload, onShowModelWiza
         <div className="p-3">
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[var(--color-primary)] text-black font-medium text-sm hover:bg-[var(--color-primary)]/90 transition-colors shadow-[0_0_20px_rgba(40,229,24,0.3)]"
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[var(--color-primary)] text-black font-medium text-sm hover:bg-[var(--color-primary)]/90 transition-colors shadow-[0_0_20px_rgba(0,254,254,0.3)]"
           >
             <Plus size={18} />
             <span>{i18nStore.t('common.newConversation')}</span>

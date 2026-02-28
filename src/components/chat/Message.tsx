@@ -206,7 +206,7 @@ export function Message({ message, onOpenInCanvas, onRegenerate }: MessageProps)
       )}
     >
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-[0_0_15px_rgba(40,229,24,0.3)]">
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-[0_0_15px_rgba(0,254,254,0.3)]">
           <Bot size={18} color="black" />
         </div>
       )}
@@ -232,7 +232,7 @@ export function Message({ message, onOpenInCanvas, onRegenerate }: MessageProps)
             'rounded-2xl px-4 py-2.5 text-sm',
             'transition-all duration-200',
             isUser
-              ? 'bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-[0_0_15px_rgba(40,229,24,0.2)]'
+              ? 'bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-[0_0_15px_rgba(0,254,254,0.2)]'
               : 'bg-[var(--color-bg-secondary)] text-[var(--color-text)] border border-[var(--color-border)]'
           )}
         >
