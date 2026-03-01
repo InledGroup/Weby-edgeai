@@ -7,6 +7,7 @@ import { ChatInput } from './ChatInput';
 import { WebSearchProgress } from './WebSearchProgress';
 import { UrlConfirmationModal } from './UrlConfirmationModal';
 import { MarkdownRenderer } from '../ui/MarkdownRenderer';
+import { cosineSimilarity } from '@/lib/rag/vector-search';
 import { 
   conversationsStore, 
   modelsReady, 
@@ -22,10 +23,12 @@ import {
   activeTabFaviconSignal
 } from '@/lib/stores';
 import { i18nStore } from '@/lib/stores/i18n';
-import type { Message as MessageType } from '@/types';
+import { Message as MessageType } from '@/types';
 import { completeRAGFlow } from '@/lib/rag/rag-pipeline';
+import { semanticChunkText } from '@/lib/rag/semantic-chunking';
 import EngineManager from '@/lib/ai/engine-manager';
 import { WebLLMEngine } from '@/lib/ai/webllm-engine';
+import { detectLoop } from '@/lib/ai/utils';
 import { 
   addMessage, 
   getOrCreateConversation, 
@@ -135,9 +138,11 @@ export function ChatInterface() {
   const [pendingUrls, setPendingUrls] = useState<string[] | null>(null);
   const [confirmationResolver, setConfirmationResolver] = useState<((urls: string[] | null) => void) | null>(null);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [selectedText, setSelectedText] = useState<{ text: string, title: string, url: string, forceMode: 'prompt' | 'rag' } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const streamingState = useRef({ spokenIndex: 0, buffer: '', isStreamingAudio: false, timer: null as any });
@@ -146,6 +151,26 @@ export function ChatInterface() {
   const isHasDocs = hasReadyDocuments.value;
   const currentMode = chatModeSignal.value;
   const canChat = canChatSignal.value;
+
+  // Listen for text selection from content script
+  useEffect(() => {
+    const handleMessage = (message: any) => {
+      if (message.type === 'TEXT_SELECTED') {
+        setSelectedText({
+          text: message.data.text,
+          title: message.data.title,
+          url: message.data.url,
+          forceMode: message.data.text.length > 2000 ? 'rag' : 'prompt'
+        });
+        
+        // Focus chat input if possible (UI improvement)
+        const input = document.querySelector('textarea');
+        if (input) input.focus();
+      }
+    };
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -271,6 +296,13 @@ export function ChatInterface() {
     }
   }, [conversationsStore.activeId]);
 
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsGenerating(false);
+    }
+  };
+
   const handleOpenInCanvas = (content: string) => {
     canvasStore.open(markdownToHTML(content));
   };
@@ -308,6 +340,11 @@ export function ChatInterface() {
     setWebSearchProgress(null);
     startAudioStreaming();
 
+    // Reset and initialize AbortController
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+    const abortSignal = abortControllerRef.current.signal;
+
     let assistantId = generateUUID();
 
     try {
@@ -339,6 +376,43 @@ export function ChatInterface() {
       const originalContent = content; 
       let assistantPrompt = content;   
       let effectiveMode = mode;
+
+      // Handle Selected Text Context (Temporary Exclusive Source)
+      if (selectedText) {
+        if (selectedText.forceMode === 'prompt') {
+          assistantPrompt = `CONTEXTO DEL TEXTO SELECCIONADO (Fuente Única):\n"""\n${selectedText.text}\n"""\n\nPregunta: ${content}`;
+          effectiveMode = 'conversation'; // Send directly to LLM with the context in the prompt
+        } else {
+          // RAG mode for selection
+          setWebSearchProgress({ step: 'searching', progress: 10, message: 'Analizando selección...' });
+          const embeddingEngine = await EngineManager.getEmbeddingEngine();
+          
+          // Chunk selection on the fly
+          const chunks = semanticChunkText(selectedText.text, 600);
+          setWebSearchProgress({ step: 'searching', progress: 30, message: `Indexando ${chunks.length} fragmentos...` });
+          
+          // Generate embeddings for selection chunks
+          const chunkTexts = chunks.map(c => c.content);
+          const chunkEmbeddings = await embeddingEngine.generateEmbeddingsBatch(chunkTexts, 4);
+          
+          // Search within selection chunks
+          const queryEmbedding = await embeddingEngine.generateEmbedding(content);
+          const scored = chunks.map((c, i) => ({
+            content: c.content,
+            score: cosineSimilarity(queryEmbedding, chunkEmbeddings[i])
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5);
+          
+          const selectionContext = scored.map((s, i) => `[Doc ${i+1}]: ${s.content}`).join('\n\n');
+          assistantPrompt = `CONTEXTO SELECCIONADO (Procesado vía RAG):\n${selectionContext}\n\nPregunta: ${content}`;
+          effectiveMode = 'conversation';
+          setWebSearchProgress(null);
+        }
+        
+        // Clear selection after use
+        setSelectedText(null);
+      }
 
       // Reset active tool in store if it was used
       if (activeTool) {
@@ -473,7 +547,16 @@ export function ChatInterface() {
 
         const res = await orchestrator.search(originalContent, {
           onToken: (t) => {
+            if (abortSignal.aborted) return;
             finalContent += t;
+            
+            // Loop detection
+            if (detectLoop(finalContent)) {
+              console.warn('[Chat] Stopping generation due to loop detected');
+              abortControllerRef.current?.abort();
+              return;
+            }
+
             setCurrentResponse(finalContent);
             processAudioChunk(t);
             setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: finalContent } : m));
@@ -484,6 +567,7 @@ export function ChatInterface() {
           conversationHistory: history, // Pass history for context
           additionalContext: canvasContext + memoryContext, // Pass memories and canvas
           confirmUrls: true,
+          abortSignal, // Pass abortSignal
           onConfirmationRequest: async (urls) => {
             setPendingUrls(urls);
             return new Promise((resolve) => {
@@ -530,7 +614,15 @@ export function ChatInterface() {
 
         // 1. Initial RAG Pass
         const result = await completeRAGFlow(assistantPrompt, embeddingEngine, chatEngine, tK, undefined, history, (c) => {
+          if (abortSignal.aborted) return;
           streamedText += c;
+          
+          if (detectLoop(streamedText)) {
+            console.warn('[Chat] Stopping generation due to loop detected');
+            abortControllerRef.current?.abort();
+            return;
+          }
+
           setCurrentResponse(streamedText);
           processAudioChunk(c);
           setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: streamedText } : m));
@@ -538,38 +630,50 @@ export function ChatInterface() {
           additionalContext: canvasContext + memoryContext,
           calculateMetrics: true,
           faithfulnessThreshold: fThreshold,
-          chunkWindowSize: cWindow
+          chunkWindowSize: cWindow,
+          abortSignal // Pass signal
         });
 
         let finalAnswer = result.answer;
         let finalChunks = result.ragResult.chunks;
         
         // 2. Check for 'Read More' pattern in the response
-        const readMoreMatch = finalAnswer.match(/\((.*?)\)\.readmore=(\d+)/);
-        if (readMoreMatch) {
-          const [_, docName, lines] = readMoreMatch;
-          setWebSearchProgress({ step: 'searching' as any, progress: 50, message: `Expandiendo lectura: ${docName}...` });
-          
-          const allDocs = await import('@/lib/db/documents').then(m => m.getAllDocuments());
-          const targetDoc = allDocs.find(d => d.name.toLowerCase().includes(docName.toLowerCase()));
-          
-          if (targetDoc) {
-            const extraK = Math.min(parseInt(lines) || 5, 10);
-            const secondResult = await completeRAGFlow(assistantPrompt, embeddingEngine, chatEngine, tK + extraK, [targetDoc.id], history, (c) => {
-              streamedText = c;
-              setCurrentResponse(streamedText);
-              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: streamedText } : m));
-            }, { 
-              additionalContext: `\n\nINFO ADICIONAL DE ${targetDoc.name}:\nEl usuario (via comando) solicitó leer más. Aquí tienes contexto expandido. RE-ESCRIBE tu respuesta integrando estos nuevos datos.`,
-              calculateMetrics: true,
-              faithfulnessThreshold: fThreshold,
-              chunkWindowSize: cWindow
-            });
+        if (!abortSignal.aborted) {
+          const readMoreMatch = finalAnswer.match(/\((.*?)\)\.readmore=(\d+)/);
+          if (readMoreMatch) {
+            const [_, docName, lines] = readMoreMatch;
+            setWebSearchProgress({ step: 'searching' as any, progress: 50, message: `Expandiendo lectura: ${docName}...` });
             
-            finalAnswer = secondResult.answer;
-            finalChunks = secondResult.ragResult.chunks;
+            const allDocs = await import('@/lib/db/documents').then(m => m.getAllDocuments());
+            const targetDoc = allDocs.find(d => d.name.toLowerCase().includes(docName.toLowerCase()));
+            
+            if (targetDoc) {
+              const extraK = Math.min(parseInt(lines) || 5, 10);
+              const secondResult = await completeRAGFlow(assistantPrompt, embeddingEngine, chatEngine, tK + extraK, [targetDoc.id], history, (c) => {
+                if (abortSignal.aborted) return;
+                streamedText = c;
+                
+                if (detectLoop(streamedText)) {
+                  console.warn('[Chat] Stopping generation due to loop detected');
+                  abortControllerRef.current?.abort();
+                  return;
+                }
+
+                setCurrentResponse(streamedText);
+                setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: streamedText } : m));
+              }, { 
+                additionalContext: `\n\nINFO ADICIONAL DE ${targetDoc.name}:\nEl usuario (via comando) solicitó leer más. Aquí tienes contexto expandido. RE-ESCRIBE tu respuesta integrando estos nuevos datos.`,
+                calculateMetrics: true,
+                faithfulnessThreshold: fThreshold,
+                chunkWindowSize: cWindow,
+                abortSignal // Pass signal
+              });
+              
+              finalAnswer = secondResult.answer;
+              finalChunks = secondResult.ragResult.chunks;
+            }
+            setWebSearchProgress(null);
           }
-          setWebSearchProgress(null);
         }
 
         finalContent = finalAnswer;
@@ -596,6 +700,7 @@ export function ChatInterface() {
         }
         
         const systemPrompt = `Eres un asistente inteligente local con memoria persistente.
+${selectedText ? '### REGLA CRÍTICA: FUENTE ÚNICA ###\nEl usuario ha seleccionado un texto específico. Responde EXCLUSIVAMENTE basándote en ese texto proporcionado. IGNORA el resto del sitio web o documentos externos para esta respuesta.\n### FIN REGLA ###' : ''}
 ### DATOS IMPORTANTES DEL USUARIO (MEMORIA) ###
 ${memoryContext || 'No hay recuerdos previos.'}
 ### FIN DE MEMORIA ###
@@ -640,13 +745,23 @@ Instrucciones Críticas:
            let loops = 0;
            let lastResContent = '';
 
-           while (loops < 5) {
+           while (loops < 5 && !abortSignal.aborted) {
              let isToolCallDetected = false;
              let loopAccumulated = '';
              const res = await toolEngine.chat(currentMsgs, { 
                tools: mcpTools, 
+               abortSignal, // Pass signal
                onStream: (c) => { 
+                 if (abortSignal.aborted) return;
                  loopAccumulated += c;
+                 
+                 // Detect loop in accumulated text
+                 if (detectLoop(loopAccumulated)) {
+                   console.warn('[Chat] Stopping tool generation due to loop detected');
+                   abortControllerRef.current?.abort();
+                   return;
+                 }
+
                  if (loopAccumulated.includes('{') || loopAccumulated.includes('###')) { 
                    isToolCallDetected = true; 
                    setCurrentResponse(''); 
@@ -660,13 +775,14 @@ Instrucciones Críticas:
                } 
              });
 
-             if (res.tool_calls && res.tool_calls.length > 0) {
+             if (!abortSignal.aborted && res.tool_calls && res.tool_calls.length > 0) {
                 currentMsgs.push(res);
                 const toolCallMsg = { id: generateUUID(), role: 'assistant', content: res.content || '', timestamp: Date.now(), tool_calls: res.tool_calls };
                 setMessages(prev => [...prev.filter(m => m.id !== assistantId), toolCallMsg as any]);
                 await addMessage(conversationId, toolCallMsg as any);
                 
                 for (const call of res.tool_calls) {
+                   if (abortSignal.aborted) break;
                    const fakeName = call.function.name;
                    const realName = toolNameMap.get(fakeName) || fakeName;
                    setWebSearchProgress({ step: 'searching' as any, progress: 50, message: `Ejecutando ${realName}...` });
@@ -699,9 +815,19 @@ Instrucciones Críticas:
              }
            }
 
-           if (loops > 0 && (!lastResContent || lastResContent.length < 5)) {
-              await chatEngine.generateText(currentMsgs as any, { onStream: (c) => { 
+           if (!abortSignal.aborted && loops > 0 && (!lastResContent || lastResContent.length < 5)) {
+              await chatEngine.generateText(currentMsgs as any, { 
+                abortSignal, // Pass signal
+                onStream: (c) => { 
+                if (abortSignal.aborted) return;
                 finalContent += c;
+                
+                if (detectLoop(finalContent)) {
+                  console.warn('[Chat] Stopping follow-up generation due to loop detected');
+                  abortControllerRef.current?.abort();
+                  return;
+                }
+
                 setCurrentResponse(finalContent); 
                 processAudioChunk(c);
                 // Need to find the latest assistant message to update
@@ -716,8 +842,18 @@ Instrucciones Críticas:
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: finalContent, streaming: false } : m));
            }
         } else {
-            await chatEngine.generateText(chatMsgs as any, { onStream: (c) => { 
+            await chatEngine.generateText(chatMsgs as any, { 
+              abortSignal, // Pass signal
+              onStream: (c) => { 
+              if (abortSignal.aborted) return;
               finalContent += c;
+              
+              if (detectLoop(finalContent)) {
+                console.warn('[Chat] Stopping generation due to loop detected');
+                abortControllerRef.current?.abort();
+                return;
+              }
+
               setCurrentResponse(finalContent); 
               processAudioChunk(c);
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: finalContent } : m));
@@ -776,10 +912,15 @@ Instrucciones Críticas:
       setTimeout(() => autoExtractMemory(originalContent, finalContent), 1000);
 
     } catch (error: any) {
-      console.error(error);
-      setMessages(prev => [...prev.filter(m => m.id !== assistantId), { id: generateUUID(), role: 'assistant', content: 'Error: ' + error.message, timestamp: Date.now() }]);
+      if (error.name === 'AbortError' || abortSignal.aborted) {
+        console.log('[Chat] Generation aborted by user');
+      } else {
+        console.error(error);
+        setMessages(prev => [...prev.filter(m => m.id !== assistantId), { id: generateUUID(), role: 'assistant', content: 'Error: ' + error.message, timestamp: Date.now() }]);
+      }
     } finally { 
       setIsGenerating(false); 
+      abortControllerRef.current = null;
     }
   }
 
@@ -950,8 +1091,56 @@ Instrucciones Críticas:
       </div>
       <div className="flex-shrink-0 p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md">
         <div className="max-w-3xl mx-auto">
+          {selectedText && (
+            <div className="mb-3 p-3 bg-[var(--color-bg-secondary)] border border-[var(--color-primary)]/40 rounded-xl animate-in slide-in-from-bottom-2 shadow-sm border-l-4 border-l-[var(--color-primary)]">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-[var(--color-primary)]" />
+                  <span className="text-xs font-bold text-[var(--color-text)]">Contexto de Selección</span>
+                </div>
+                <button 
+                  onClick={() => setSelectedText(null)} 
+                  className="p-1 hover:bg-[var(--color-bg-hover)] rounded-md transition-colors"
+                  title="Eliminar selección"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="text-[10px] text-[var(--color-text-secondary)] line-clamp-2 mb-2 italic px-1 leading-relaxed border-l-2 border-[var(--color-border)] ml-1">
+                "{selectedText.text}"
+              </div>
+              <div className="flex items-center justify-between gap-4 mt-1">
+                <div className="flex bg-[var(--color-bg-tertiary)] rounded-lg p-0.5 border border-[var(--color-border)] shadow-inner">
+                  <button 
+                    onClick={() => setSelectedText({...selectedText, forceMode: 'prompt'})}
+                    className={cn(
+                      "px-3 py-1 text-[9px] font-bold rounded-md transition-all flex flex-col items-center",
+                      selectedText.forceMode === 'prompt' ? "bg-[var(--color-primary)] text-black shadow-sm" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+                    )}
+                  >
+                    <span>CONVERSACIÓN</span>
+                    {selectedText.text.length <= 2000 && <span className="text-[7px] opacity-70">Recomendado</span>}
+                  </button>
+                  <button 
+                    onClick={() => setSelectedText({...selectedText, forceMode: 'rag'})}
+                    className={cn(
+                      "px-3 py-1 text-[9px] font-bold rounded-md transition-all flex flex-col items-center",
+                      selectedText.forceMode === 'rag' ? "bg-[var(--color-primary)] text-black shadow-sm" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+                    )}
+                  >
+                    <span>RAG SELECCIÓN</span>
+                    {selectedText.text.length > 2000 && <span className="text-[7px] opacity-70">Recomendado</span>}
+                  </button>
+                </div>
+                <div className="text-[9px] font-medium px-2 py-0.5 bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)] rounded-full border border-[var(--color-border)]">
+                  {selectedText.text.length} caracteres
+                </div>
+              </div>
+            </div>
+          )}
           <ChatInput 
             onSend={handleSendMessage} 
+            onStop={handleStopGeneration}
             disabled={!canChat} 
             loading={isGenerating} 
             supportsVision={!!modelsStore.chat?.requiresGPU}

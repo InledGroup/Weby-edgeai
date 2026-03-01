@@ -127,6 +127,7 @@ export async function queryWithRAG(
     useQueryExpansion?: boolean;
     useQueryRewriting?: boolean;
     chunkWindowSize?: number;
+    abortSignal?: AbortSignal;
   }
 ): Promise<RAGResult> {
   const startTime = Date.now();
@@ -138,12 +139,15 @@ export async function queryWithRAG(
   // Optional: Rewrite query for clarity
   if (options?.useQueryRewriting && chatEngine) {
     try {
-      searchQuery = await rewriteQuery(query, chatEngine);
+      searchQuery = await rewriteQuery(query, chatEngine, { abortSignal: options.abortSignal });
       console.log(`✍️ Rewritten query: "${searchQuery}"`);
     } catch (error) {
       console.warn('⚠️ Query rewriting failed, using original');
     }
   }
+
+  // Check if aborted after rewriting
+  if (options?.abortSignal?.aborted) throw new Error('Aborted');
 
   // 1. Optional: Query Expansion
   let queries = [searchQuery];
@@ -151,7 +155,8 @@ export async function queryWithRAG(
     try {
       const expanded = await expandQuery(searchQuery, chatEngine, {
         maxVariations: 2,
-        includeOriginal: false
+        includeOriginal: false,
+        abortSignal: options.abortSignal
       });
       queries = [...queries, ...expanded.expanded];
       console.log(`🔍 Using expanded queries (${queries.length} total)`);
@@ -160,10 +165,14 @@ export async function queryWithRAG(
     }
   }
 
+  // Check if aborted after expansion
+  if (options?.abortSignal?.aborted) throw new Error('Aborted');
+
   // 2. Retrieve chunks for all query variations
   const resultLists: any[][] = [];
   
   for (const q of queries) {
+    if (options?.abortSignal?.aborted) throw new Error('Aborted');
     const queryEmbedding = await embeddingEngine.generateEmbedding(q);
     const chunks = await searchSimilarChunks(
       queryEmbedding,
@@ -187,7 +196,7 @@ export async function queryWithRAG(
     : resultLists[0];
 
   // 4. Optional: LLM-Based Reranking (Listwise)
-  if (chatEngine && combinedChunks.length > 1) {
+  if (chatEngine && combinedChunks.length > 1 && !options?.abortSignal?.aborted) {
     try {
       console.log('🔄 [RAG Pipeline] Performing LLM-based reranking...');
       const candidates = combinedChunks.slice(0, 10);
@@ -202,7 +211,8 @@ ${candidatesText}`;
 
       const rerankOrder = await chatEngine.generateText([{ role: 'user', content: rerankPrompt }], { 
         maxTokens: 50,
-        temperature: 0.1 
+        temperature: 0.1,
+        abortSignal: options.abortSignal
       });
       
       const orderIds = rerankOrder
@@ -243,7 +253,8 @@ export async function generateRAGAnswer(
   chatEngine: WebLLMEngine | WllamaEngine,
   conversationHistory?: Array<{role: string, content: string}>,
   onStream?: (chunk: string) => void,
-  additionalContext?: string
+  additionalContext?: string,
+  abortSignal?: AbortSignal
 ): Promise<string> {
   // Get dynamic generation settings from database
   const genSettings = await getGenerationSettings();
@@ -322,7 +333,8 @@ ${context || 'No hay documentos relevantes.'}`;
     temperature: temperature,
     maxTokens: maxTokens,
     stop: ['<|im_end|>', '<|end|>', '<|eot_id|>'],
-    onStream
+    onStream,
+    abortSignal
   });
 }
 
@@ -345,6 +357,7 @@ export async function completeRAGFlow(
     additionalContext?: string;
     faithfulnessThreshold?: number;
     chunkWindowSize?: number;
+    abortSignal?: AbortSignal;
   }
 ): Promise<{
   answer: string;
@@ -376,9 +389,12 @@ export async function completeRAGFlow(
     {
       useQueryExpansion: options?.useQueryExpansion,
       useQueryRewriting: shouldRewrite,
-      chunkWindowSize: effectiveWindowSize
+      chunkWindowSize: effectiveWindowSize,
+      abortSignal: options?.abortSignal
     }
   );
+
+  if (options?.abortSignal?.aborted) throw new Error('Aborted');
 
   console.log(`📊 Retrieved ${ragResult.chunks.length} chunks (Window: +${effectiveWindowSize}) in ${ragResult.searchTime}ms`);
 
@@ -393,7 +409,7 @@ export async function completeRAGFlow(
   }
 
   // Step 3: Generate answer with conversation history
-  const answer = await generateRAGAnswer(query, ragResult, chatEngine, conversationHistory, onStream, options?.additionalContext);
+  const answer = await generateRAGAnswer(query, ragResult, chatEngine, conversationHistory, onStream, options?.additionalContext, options?.abortSignal);
 
   // Step 4: Calculate answer faithfulness (if metrics enabled)
   let faithfulness;

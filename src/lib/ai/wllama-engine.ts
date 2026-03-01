@@ -105,7 +105,7 @@ export class WllamaEngine {
   async chat(messages: any[], options: any = {}): Promise<any> {
     if (!this.isInitialized || !this.wllama) throw new Error('Wllama not initialized');
 
-    const { temperature = 0.7, maxTokens = 1024, topP = 0.95, tools, onStream, onAudio } = options;
+    const { temperature = 0.7, maxTokens = 1024, topP = 0.95, tools, onStream, onAudio, abortSignal } = options;
 
     try {
        // Convert messages to tool-friendly format
@@ -160,7 +160,8 @@ Asistente: { "tool": "search", "args": { "query": "notas" } }
          topP,
          stop: ['<|end_of_text|>', '<|im_end|>', '```'],
          onStream: wrappedOnStream,
-         onAudio
+         onAudio,
+         abortSignal
        });
 
        const toolCall = this.extractToolCall(fullContent);
@@ -213,7 +214,7 @@ Asistente: { "tool": "search", "args": { "query": "notas" } }
   ): Promise<string> {
     if (!this.isInitialized || !this.wllama) throw new Error('Wllama not initialized');
 
-    const { temperature = 0.7, maxTokens = 512, stop = [], onStream, onAudio } = options;
+    const { temperature = 0.7, maxTokens = 512, stop = [], onStream, onAudio, abortSignal } = options;
 
     try {
       await this.wllama.setOptions({ embeddings: false });
@@ -245,7 +246,12 @@ Asistente: { "tool": "search", "args": { "query": "notas" } }
           nPredict: maxTokens,
           temp: temperature,
           stop: effectiveStop,
-          onNewToken: (tokenId: number, piece: Uint8Array | number[], _currentText: any) => {
+          abortSignal,
+          onNewToken: (tokenId: number, piece: Uint8Array | number[], _currentText: any, _opt?: any) => {
+            if (abortSignal?.aborted) {
+              if (_opt?.abortSignal) _opt.abortSignal();
+              return;
+            }
             
             // --- LFM Audio Token Handling ---
             if (isAudioModel && tokenId >= AUDIO_VOCAB_START) {

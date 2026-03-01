@@ -15,6 +15,7 @@ export interface GenerationOptions {
   tool_choice?: any;
   onStream?: (chunk: string) => void;
   onAudio?: (audio: Float32Array | Uint8Array) => void;
+  abortSignal?: AbortSignal;
 }
 
 export interface ProgressCallback {
@@ -75,7 +76,15 @@ export class WebLLMEngine {
 
   async chat(messages: any[], options: GenerationOptions = {}): Promise<any> {
     if (!this.isInitialized || !this.engine) throw new Error('WebLLM not initialized');
-    const { temperature = 0.7, maxTokens = 512, topP = 0.95, stop, tools, onStream } = options;
+    const { temperature = 0.7, maxTokens = 512, topP = 0.95, stop, tools, onStream, abortSignal } = options;
+
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', () => {
+        try {
+          this.engine?.interruptGenerate();
+        } catch(e) {}
+      }, { once: true });
+    }
 
     try {
       const nativeToolModels = ['Hermes-2-Pro', 'Hermes-3', 'Llama-3.1-8B-Instruct'];
@@ -136,6 +145,8 @@ Assistant: {"tool": "some__list_items", "args": {}}`;
           stop: useNativeTools ? stop : ['<|end_of_text|>', '<|im_end|>', '```'],
           tools: useNativeTools ? tools : undefined,
           stream: true,
+        }, {
+          abortSignal
         });
 
         for await (const chunk of completion) {
@@ -210,6 +221,14 @@ Assistant: {"tool": "some__list_items", "args": {}}`;
   async generateText(input: string | { role: string; content: string | any[] }[], options: GenerationOptions = {}): Promise<string> {
     if (!this.isInitialized || !this.engine) throw new Error('WebLLM not initialized');
     
+    if (options.abortSignal) {
+      options.abortSignal.addEventListener('abort', () => {
+        try {
+          this.engine?.interruptGenerate();
+        } catch(e) {}
+      }, { once: true });
+    }
+
     let messages = Array.isArray(input) ? input : [{ role: 'user', content: input }];
     
     // Fix for "Role is not supported: tool" in generateText
@@ -232,6 +251,8 @@ Assistant: {"tool": "some__list_items", "args": {}}`;
         messages: messages as any, 
         ...options, 
         stream: true 
+      }, {
+        abortSignal: options.abortSignal
       });
       for await (const chunk of completion) {
         const content = chunk.choices[0]?.delta?.content || '';

@@ -405,6 +405,9 @@ export interface WebRAGOptions {
 
   /** Callback para streaming de tokens durante la generación de respuesta */
   onToken?: (token: string) => void;
+
+  /** Abort signal para cancelar la operación */
+  abortSignal?: AbortSignal;
 }
 
 /**

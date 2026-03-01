@@ -38,7 +38,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["public/wllama/*"],
+      "resources": ["public/wllama/*", "inledai.svg"],
       "matches": ["<all_urls>"]
     }
   ]

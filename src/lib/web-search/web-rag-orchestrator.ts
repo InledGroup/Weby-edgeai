@@ -112,12 +112,15 @@ export class WebRAGOrchestrator {
       maxUrlsToFetch = webSettings.webSearchMaxUrls || 3,
       topK = ragSettings.topK || 5, 
       onProgress,
+      abortSignal,
     } = options;
 
     const startTime = Date.now();
     const timestamps: Record<string, number> = {};
 
     try {
+      if (abortSignal?.aborted) throw new Error('Aborted');
+
       // Cleanup expired cache entries (async, don't wait)
       cleanupExpiredPages().catch(err =>
         console.warn('Failed to cleanup web cache:', err)
@@ -128,8 +131,10 @@ export class WebRAGOrchestrator {
       onProgress?.('query_generation', 10);
       const stepStart = Date.now();
 
-      const searchQuery = await this.generateSearchQuery(userQuery);
+      const searchQuery = await this.generateSearchQuery(userQuery, abortSignal);
       timestamps.queryGeneration = Date.now() - stepStart;
+
+      if (abortSignal?.aborted) throw new Error('Aborted');
 
       console.log(`[WebRAG] Generated search query: "${searchQuery}"`);
 
@@ -144,6 +149,8 @@ export class WebRAGOrchestrator {
         sources,
       });
       timestamps.webSearch = Date.now() - searchStart;
+
+      if (abortSignal?.aborted) throw new Error('Aborted');
 
       console.log(`[WebRAG] Found ${searchResults.length} search results`);
 
@@ -160,9 +167,12 @@ export class WebRAGOrchestrator {
       const selectedIndices = await this.selectRelevantResults(
         userQuery,
         searchResults,
-        maxUrlsToFetch
+        maxUrlsToFetch,
+        abortSignal
       );
       timestamps.urlSelection = Date.now() - selectionStart;
+
+      if (abortSignal?.aborted) throw new Error('Aborted');
 
       const selectedResults = selectedIndices.map((i) => searchResults[i]);
       let selectedUrls = selectedResults.map((r) => r.url);
@@ -177,6 +187,8 @@ export class WebRAGOrchestrator {
         
         console.log('[WebRAG] Requesting user confirmation for URLs:', selectedUrls);
         const confirmedUrls = await options.onConfirmationRequest(selectedUrls);
+
+        if (abortSignal?.aborted) throw new Error('Aborted');
 
         if (!confirmedUrls || confirmedUrls.length === 0) {
            throw new Error('Búsqueda cancelada por el usuario o sin URLs seleccionadas');
@@ -196,6 +208,8 @@ export class WebRAGOrchestrator {
       const hasExtensionContent = selectedResults.some((r: any) => r.metadata?.fullContent);
       let cleanedContents: CleanedContent[] = [];
       let sourcesUsed = 0;
+
+      if (abortSignal?.aborted) throw new Error('Aborted');
 
       if (hasExtensionContent) {
         console.log('[WebRAG] Usando contenido pre-extraído de la extensión');
@@ -220,6 +234,8 @@ export class WebRAGOrchestrator {
         try {
           console.log(`[WebRAG] Extrayendo ${selectedUrls.length} URLs vía extensión...`);
           const response = await bridge.extractUrls(selectedUrls);
+          
+          if (abortSignal?.aborted) throw new Error('Aborted');
           
           if (response.success && response.results && response.results.length > 0) {
             cleanedContents = response.results.map(r => ({
@@ -256,6 +272,7 @@ export class WebRAGOrchestrator {
       const tempDocIds: string[] = [];
       
       for (const content of cleanedContents) {
+        if (abortSignal?.aborted) break;
         try {
           console.log(`[WebRAG] Creando documento temporal para: ${content.title}`);
           const doc = await createDocument({
@@ -288,6 +305,8 @@ export class WebRAGOrchestrator {
         }
       }
 
+      if (abortSignal?.aborted) throw new Error('Aborted');
+
       if (tempDocIds.length === 0) {
         throw new Error('Error técnico: Se obtuvo contenido pero falló la indexación en la base de datos local.');
       }
@@ -309,7 +328,8 @@ export class WebRAGOrchestrator {
           additionalContext: options.additionalContext,
           calculateMetrics: true,
           faithfulnessThreshold: genSettings.faithfulnessThreshold,
-          chunkWindowSize: ragSettings.chunkWindowSize
+          chunkWindowSize: ragSettings.chunkWindowSize,
+          abortSignal // Pass abortSignal
         }
       );
 
@@ -355,7 +375,7 @@ export class WebRAGOrchestrator {
   // PASO 1: Generar query de búsqueda
   // ==========================================================================
 
-  private async generateSearchQuery(userQuery: string): Promise<string> {
+  private async generateSearchQuery(userQuery: string, abortSignal?: AbortSignal): Promise<string> {
     const messages = [
       {
         role: 'system',
@@ -380,6 +400,7 @@ Responde SOLO con la consulta de búsqueda, sin explicaciones.`
     const response = await this.generateText(messages, {
       temperature: 0.3,
       max_tokens: 50,
+      abortSignal
     });
 
     // Limpiar y normalizar
@@ -393,7 +414,8 @@ Responde SOLO con la consulta de búsqueda, sin explicaciones.`
   private async selectRelevantResults(
     userQuery: string,
     results: SearchResult[],
-    maxUrls: number
+    maxUrls: number,
+    abortSignal?: AbortSignal
   ): Promise<number[]> {
     // Formatear resultados para el LLM
     const resultsText = results
@@ -421,6 +443,7 @@ Responde SOLO con un JSON en este formato exacto:
     const response = await this.generateText(messages, {
       temperature: 0.1,
       max_tokens: 100,
+      abortSignal
     });
 
     // Extraer JSON de la respuesta
@@ -483,7 +506,7 @@ Responde SOLO con un JSON en este formato exacto:
    */
   private async generateText(
     input: string | { role: string; content: string }[],
-    options: { temperature: number; max_tokens: number; stop?: string[]; onToken?: (token: string) => void }
+    options: { temperature: number; max_tokens: number; stop?: string[]; onToken?: (token: string) => void; abortSignal?: AbortSignal }
   ): Promise<string> {
     // WebLLM with streaming support
     if ('generateText' in this.llmEngine) {
@@ -494,6 +517,7 @@ Responde SOLO con un JSON en este formato exacto:
           maxTokens: options.max_tokens,
           stop: options.stop,
           onStream: options.onToken, // Map onToken to onStream for WebLLM
+          abortSignal: options.abortSignal
         });
       } else {
         // Non-stream mode
@@ -501,6 +525,7 @@ Responde SOLO con un JSON en este formato exacto:
           temperature: options.temperature,
           maxTokens: options.max_tokens,
           stop: options.stop,
+          abortSignal: options.abortSignal
         });
       }
     }

@@ -206,8 +206,8 @@ export function Message({ message, onOpenInCanvas, onRegenerate }: MessageProps)
       )}
     >
       {!isUser && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center shadow-[0_0_15px_rgba(0,254,254,0.3)]">
-          <Bot size={18} color="black" />
+        <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center animate-in zoom-in duration-300">
+          <img src="/inledai.svg" className="w-7 h-7 object-contain drop-shadow-[0_0_8px_rgba(0,254,254,0.5)]" />
         </div>
       )}
 

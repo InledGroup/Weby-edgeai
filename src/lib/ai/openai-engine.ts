@@ -3,17 +3,7 @@
 
 import { getSetting } from '../db/settings';
 import { getExtensionBridge } from '../extension-bridge';
-
-export interface GenerationOptions {
-  temperature?: number;
-  maxTokens?: number;
-  topP?: number;
-  stop?: string[];
-  tools?: any[];
-  tool_choice?: any;
-  onStream?: (chunk: string) => void;
-  onAudio?: (audio: Float32Array | Uint8Array) => void;
-}
+import type { GenerationOptions } from './webllm-engine';
 
 export interface ProgressCallback {
   (progress: number, status: string): void;
